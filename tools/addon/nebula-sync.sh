@@ -7,6 +7,11 @@
 
 source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/core.func)
 source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/tools.func)
+source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/error_handler.func)
+
+set -Eeuo pipefail
+trap 'error_handler' ERR
+load_functions
 
 APP="Nebula-Sync"
 APP_TYPE="addon"
@@ -27,42 +32,16 @@ function header_info {
 EOF
 }
 
-YW=$(echo "\033[33m")
-GN=$(echo "\033[1;92m")
-RD=$(echo "\033[01;31m")
-BL=$(echo "\033[36m")
-CL=$(echo "\033[m")
-CM="${GN}✔️${CL}"
-CROSS="${RD}✖️${CL}"
-INFO="${BL}ℹ️${CL}"
-TAB="  "
-
-function msg_info() { echo -e "${INFO} ${YW}${1}...${CL}"; }
-function msg_ok() { echo -e "${CM} ${GN}${1}${CL}"; }
-function msg_error() { echo -e "${CROSS} ${RD}${1}${CL}"; }
-function msg_warn() { echo -e "⚠️  ${YW}${1}${CL}"; }
-
-function get_ip() {
-  local iface ip
-  iface=$(ip -4 route | awk '/default/ {print $5; exit}')
-  ip=$(ip -4 addr show "$iface" 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n1)
-  [[ -z "$ip" ]] && ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-  [[ -z "$ip" ]] && ip="127.0.0.1"
-  echo "$ip"
-}
-
-function detect_os() {
-  if [[ -f "/etc/alpine-release" ]]; then
-    OS="Alpine"
-    msg_error "Alpine Linux is not supported"
-    exit 1
-  elif [[ -f "/etc/debian_version" ]]; then
-    OS="Debian"
-  else
-    msg_error "Unsupported OS. Exiting."
-    exit 1
-  fi
-}
+if [[ -f "/etc/alpine-release" ]]; then
+  OS="Alpine"
+  msg_error "Alpine Linux is not supported"
+  exit 1
+elif grep -qE 'ID=debian|ID=ubuntu' /etc/os-release; then
+  OS="Debian"
+else
+  msg_error "Unsupported OS detected. Exiting."
+  exit 1
+fi
 
 function stop_service() {
   if systemctl is-active --quiet nebula-sync.service 2>/dev/null; then
@@ -83,21 +62,22 @@ function disable_service() {
 }
 
 function uninstall() {
-  msg_info "Uninstalling ${APP}"
+  msg_info "Uninstalling Nebula-Sync"
   disable_service
   rm -f "$SERVICE_PATH"
   rm -rf "$INSTALL_PATH"
   rm -f "/usr/local/bin/update_nebula-sync"
+  rm -f "$HOME/.nebula-sync"
   systemctl daemon-reload
-  msg_ok "${APP} has been uninstalled"
+  msg_ok "Nebula-Sync has been uninstalled"
 }
 
 function update() {
-  msg_info "Checking for updates"
   if check_for_gh_release "nebula-sync" "lovelaze/nebula-sync"; then
-    msg_ok "Update available"
+    msg_info "Stopping service"
     stop_service
-    
+    msg_ok "Stopped service"
+
     msg_info "Backing up configuration"
     if [[ -f "$CONFIG_PATH" ]]; then
       cp "$CONFIG_PATH" /tmp/nebula-sync.env.bak
@@ -105,9 +85,9 @@ function update() {
     else
       msg_warn "Configuration file not found, skipping backup"
     fi
-    
+
     fetch_and_deploy_gh_release "nebula-sync" "lovelaze/nebula-sync" "prebuild" "latest" "$INSTALL_PATH" "nebula-sync_.*_linux_.*\.tar\.gz"
-    
+
     msg_info "Restoring configuration"
     if [[ -f /tmp/nebula-sync.env.bak ]]; then
       cp /tmp/nebula-sync.env.bak "$CONFIG_PATH"
@@ -116,13 +96,12 @@ function update() {
     else
       msg_warn "Backup file not found, keeping existing configuration"
     fi
-    
+
     start_service
     LATEST_RELEASE="v$(cat "$HOME/.nebula-sync" 2>/dev/null || echo '0.0.0')"
     echo "$LATEST_RELEASE" > "/opt/nebula-sync_version.txt"
-    msg_ok "Updated ${APP} successfully"
-  else
-    msg_ok "${APP} is up-to-date"
+    msg_ok "Updated successfully!"
+    exit
   fi
 }
 
@@ -356,69 +335,6 @@ EOF
   msg_ok "Created and started service"
 }
 
-function create_update_script() {
-  msg_info "Creating update script"
-  cat <<'UPDATEEOF' >/usr/local/bin/update_nebula-sync
-#!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/core.func)
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/tools.func)
-load_functions
-
-INSTALL_PATH="/opt/nebula-sync"
-ENV_PATH="/opt/nebula-sync/.env"
-
-if [[ ! -f "$INSTALL_PATH/nebula-sync" ]]; then
-  msg_error "Nebula-Sync installation not found!"
-  exit 1
-fi
-
-msg_info "Stopping service"
-if systemctl is-active --quiet nebula-sync.service 2>/dev/null; then
-  systemctl stop nebula-sync.service
-fi
-msg_ok "Stopped service"
-
-msg_info "Backing up configuration"
-if [[ -f "$ENV_PATH" ]]; then
-  cp "$ENV_PATH" /tmp/nebula-sync.env.bak
-  msg_ok "Backed up configuration"
-else
-  msg_warn "Configuration file not found, skipping backup"
-fi
-
-msg_info "Detecting latest Nebula-Sync release"
-if check_for_gh_release "nebula-sync" "lovelaze/nebula-sync"; then
-  fetch_and_deploy_gh_release "nebula-sync" "lovelaze/nebula-sync" "prebuild" "latest" "$INSTALL_PATH" "nebula-sync_.*_linux_.*\.tar\.gz"
-  LATEST_RELEASE="v$(cat "$HOME/.nebula-sync" 2>/dev/null || echo '0.0.0')"
-  msg_ok "Detected Nebula-Sync ${LATEST_RELEASE}"
-else
-  msg_ok "Nebula-Sync is already up-to-date"
-  exit 0
-fi
-
-msg_info "Restoring configuration"
-if [[ -f /tmp/nebula-sync.env.bak ]]; then
-  cp /tmp/nebula-sync.env.bak "$ENV_PATH"
-  rm -f /tmp/nebula-sync.env.bak
-  msg_ok "Restored configuration"
-else
-  msg_warn "Backup file not found, keeping existing configuration"
-fi
-
-msg_info "Saving version"
-echo "${LATEST_RELEASE}" > "/opt/nebula-sync_version.txt"
-msg_ok "Saved version"
-
-msg_info "Starting service"
-systemctl start nebula-sync.service
-msg_ok "Started service"
-msg_ok "Updated successfully!"
-UPDATEEOF
-
-  chmod +x /usr/local/bin/update_nebula-sync
-  msg_ok "Created update script"
-}
-
 function install() {
   msg_info "Installing Nebula-Sync"
   mkdir -p "$INSTALL_PATH"
@@ -430,34 +346,51 @@ function install() {
   create_config
   create_wrapper
   create_service
-  create_update_script
+
+  ensure_usr_local_bin_persist
+  msg_info "Creating update script"
+  cat <<'UPDATEEOF' >/usr/local/bin/update_nebula-sync
+#!/usr/bin/env bash
+type=update bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/tools/addon/nebula-sync.sh)"
+UPDATEEOF
+  chmod +x /usr/local/bin/update_nebula-sync
+  msg_ok "Created update script (/usr/local/bin/update_nebula-sync)"
 
   echo "$LATEST_RELEASE" > "/opt/nebula-sync_version.txt"
 
   echo ""
-  msg_ok "${APP} has been installed successfully!"
-  echo -e "${TAB}Configuration: ${BL}${CONFIG_PATH}${CL}"
-  echo -e "${TAB}View logs: ${BL}journalctl -u nebula-sync -f${CL}"
-  echo -e "${TAB}Update with: ${BL}update_nebula-sync${CL}"
+  msg_ok "Nebula-Sync installed successfully"
+  msg_ok "Configuration: ${BL}${CONFIG_PATH}${CL}"
+  msg_ok "View logs: ${BL}journalctl -u nebula-sync -f${CL}"
+  msg_ok "Update with: ${BL}update_nebula-sync${CL}"
 }
 
 header_info
-detect_os
+ensure_usr_local_bin_persist
+get_lxc_ip
 
-IP=$(get_ip)
+if [[ "${type:-}" == "update" ]]; then
+  if [[ -d "$INSTALL_PATH" && -f "$BINARY_PATH" ]]; then
+    update
+  else
+    msg_error "Nebula-Sync is not installed. Nothing to update."
+    exit 1
+  fi
+  exit 0
+fi
 
-if [[ -f "$BINARY_PATH" ]] || [[ -d "$INSTALL_PATH" && -n "$(ls -A $INSTALL_PATH 2>/dev/null)" ]]; then
-  msg_warn "${APP} is already installed."
+if [[ -d "$INSTALL_PATH" && -f "$BINARY_PATH" ]]; then
+  msg_warn "Nebula-Sync is already installed."
   echo ""
 
-  echo -n "${TAB}Uninstall ${APP}? (y/N): "
+  echo -n "${TAB}Uninstall Nebula-Sync? (y/N): "
   read -r uninstall_prompt
   if [[ "${uninstall_prompt,,}" =~ ^(y|yes)$ ]]; then
     uninstall
     exit 0
   fi
 
-  echo -n "${TAB}Update ${APP}? (y/N): "
+  echo -n "${TAB}Update Nebula-Sync? (y/N): "
   read -r update_prompt
   if [[ "${update_prompt,,}" =~ ^(y|yes)$ ]]; then
     update
@@ -468,9 +401,15 @@ if [[ -f "$BINARY_PATH" ]] || [[ -d "$INSTALL_PATH" && -n "$(ls -A $INSTALL_PATH
   exit 0
 fi
 
-msg_warn "${APP} is not installed."
+msg_warn "Nebula-Sync is not installed."
 echo ""
-echo -n "${TAB}Install ${APP}? (y/N): "
+echo -e "${TAB}${INFO} This will install:"
+echo -e "${TAB}  - Nebula-Sync binary"
+echo -e "${TAB}  - Systemd service"
+echo -e "${TAB}  - Configuration file"
+echo ""
+
+echo -n "${TAB}Install Nebula-Sync? (y/N): "
 read -r install_prompt
 if [[ "${install_prompt,,}" =~ ^(y|yes)$ ]]; then
   install
