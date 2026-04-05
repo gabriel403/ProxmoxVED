@@ -16,7 +16,7 @@ update_os
 setup_hwaccel
 
 msg_info "Installing Base Dependencies"
-$STD apt-get install -y curl wget ca-certificates
+$STD apt install -y curl wget ca-certificates
 msg_ok "Installed Base Dependencies"
 
 # msg_info "Downloading and executing tools.func test suite"

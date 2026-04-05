@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+# Copyright (c) 2021-2026 community-scripts ORG
+# Author: vhsdream
+# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# Source: https://github.com/iv-org/invidious
+
+source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
+color
+verb_ip6
+catch_errors
+setting_up_container
+network_check
+update_os
+
+msg_info "Installing Dependencies"
+$STD apt install -y \
+  build-essential \
+  git \
+  libssl-dev \
+  libxml2-dev \
+  libyaml-dev \
+  libgmp-dev \
+  libreadline-dev \
+  librsvg2-bin \
+  libsqlite3-dev \
+  zlib1g-dev \
+  libpcre2-dev \
+  libevent-dev \
+  fonts-open-sans
+msg_ok "Installed Dependencies"
+
+setup_deb822_repo "crystal" "https://download.opensuse.org/repositories/devel:/languages:/crystal/Debian_13/Release.key" "https://download.opensuse.org/repositories/devel:/languages:/crystal/Debian_13/" "./"
+$STD apt install -y crystal
+
+PG_VERSION="17" setup_postgresql
+PG_DB_NAME="invidious" PG_DB_USER="invidious" setup_postgresql_db
+fetch_and_deploy_gh_release "Invidious" "iv-org/invidious" "tarball" "latest" "/opt/invidious"
+fetch_and_deploy_gh_release "Invidious Companion" "iv-org/invidious-companion" "prebuild" "latest" "/opt/invidious-companion" "invidious_companion-x86_64-unknown-linux-gnu.tar.gz"
+
+msg_info "Building Invidious"
+cd /opt/invidious
+$STD make
+msg_ok "Built Invidious"
+
+msg_info "Configuring Invidious"
+SECRET_KEY="$(openssl rand -hex 16)"
+sed -e '|^db|,|dbname|d' \
+  -e "s|^#database_.*|database_url: postgres://${PG_DB_USER}:${PG_DB_PASS}@localhost:5432/${PG_DB_NAME}|" \
+  -e 's|^#check_.*|check_tables: true|' \
+  -e 's|^#invidious_companion:|invidious_companion:|' \
+  -e 's|^#  - private_|  - private_|' \
+  -e "s|^#invidious_companion_key:.*|inviduous_companion_key: \"${SECRET_KEY}\"|" \
+  -e "s|hmac_key:.*|hmac_key: \"$(openssl rand -hex 32)\"|" \
+  /opt/invidious/config/config.example.yml >/opt/invidious/config/config.yml
+chmod 600 /opt/invidious/config/config.yml
+
+cat <<EOF >/etc/logrotate.d/invidious.logrotate
+rotate 4
+weekly
+notifempty
+missingok
+compress
+minsize 1048576
+EOF
+chmod 0644 /etc/logrotate.d/invidious.logrotate
+msg_ok "Configured Invidious"
+
+msg_info "Migrating database"
+$STD ./invidious --migrate
+msg_ok "Migrated database"
+
+msg_info "Configuring services"
+sed -e 's|=invidious|=root|' \
+  -e 's|/home|/opt|' /opt/invidious.service >/etc/systemd/system/invidious.service
+curl -fsSL https://github.com/iv-org/invidious-companion/raw/refs/heads/master/invidious-companion.service -o /etc/systemd/system/invidious-companion.service
+sed -i -e "s|CHANGE_ME$|${SECRET_KEY}|" \
+  -e 's|=invidious$|=root|' \
+  -e 's|/home|/opt|' /etc/systemd/system/invidious-companion.service
+systemctl -q enable --now invidious invidious-companion
+msg_ok "Configured services"
+
+motd_ssh
+customize
+cleanup_lxc

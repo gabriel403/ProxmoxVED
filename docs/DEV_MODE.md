@@ -294,6 +294,29 @@ bash -c "$(curl ...)"
 
 ## Environment Variables Reference
 
+### Source URL Override
+
+- `COMMUNITY_SCRIPTS_URL` (string): Base URL for sourcing all scripts and functions
+  - Default: `https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main`
+  - Override to point to your own fork/branch during development
+
+```bash
+# Use your own Gitea fork/branch
+export COMMUNITY_SCRIPTS_URL="https://git.community-scripts.org/myuser/ProxmoxVED/raw/branch/my-feature"
+bash -c "$(curl -fsSL $COMMUNITY_SCRIPTS_URL/ct/debian.sh)"
+
+# Use a GitHub fork
+export COMMUNITY_SCRIPTS_URL="https://raw.githubusercontent.com/myuser/ProxmoxVED/my-branch"
+bash -c "$(curl -fsSL $COMMUNITY_SCRIPTS_URL/ct/debian.sh)"
+
+# Combined with dev modes
+export COMMUNITY_SCRIPTS_URL="https://git.community-scripts.org/myuser/ProxmoxVED/raw/branch/fix-xyz"
+export dev_mode="keep,trace"
+bash -c "$(curl -fsSL $COMMUNITY_SCRIPTS_URL/ct/myapp.sh)"
+```
+
+This single variable controls where **all** scripts and functions are sourced from — including `build.func`, `install.func`, `core.func`, `tools.func`, and the `install/<app>-install.sh` scripts inside the container. No need to modify individual files.
+
 ### Dev Mode Variables
 
 - `dev_mode` (string): Comma-separated list of modes

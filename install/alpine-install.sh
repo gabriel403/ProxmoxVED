@@ -23,3 +23,4 @@ msg_ok "Installed Dependencies"
 
 motd_ssh
 customize
+cleanup_lxc

@@ -2,22 +2,27 @@
 
 ## Overview
 
-The `api.func` file provides Proxmox API integration and diagnostic reporting functionality for the Community Scripts project. It handles API communication, error reporting, and status updates to the community-scripts.org API.
+The `api.func` file provides PocketBase API integration and diagnostic reporting for the Community Scripts project. It handles telemetry communication, error reporting, and status updates to the PocketBase backend at `db.community-scripts.org`.
 
 ## Purpose and Use Cases
 
-- **API Communication**: Send installation and status data to community-scripts.org API
+- **API Communication**: Send installation and status data to PocketBase
 - **Diagnostic Reporting**: Report installation progress and errors for analytics
-- **Error Description**: Provide detailed error code explanations
+- **Error Description**: Provide detailed error code explanations (canonical source of truth)
 - **Status Updates**: Track installation success/failure status
 - **Analytics**: Contribute anonymous usage data for project improvement
 
 ## Quick Reference
 
 ### Key Function Groups
-- **Error Handling**: `get_error_description()` - Convert exit codes to human-readable messages
-- **API Communication**: `post_to_api()`, `post_to_api_vm()` - Send installation data
-- **Status Updates**: `post_update_to_api()` - Report installation completion status
+- **Error Handling**: `explain_exit_code()` - Convert exit codes to human-readable messages
+- **API Communication**: `post_to_api()`, `post_to_api_vm()` - Send installation data to PocketBase
+- **Status Updates**: `post_update_to_api()` - Report installation completion status via PATCH
+
+### PocketBase Configuration
+- **URL**: `http://db.community-scripts.org`
+- **Collection**: `_dev_telemetry_data`
+- **API Endpoint**: `/api/collections/_dev_telemetry_data/records`
 
 ### Dependencies
 - **External**: `curl` command for HTTP requests
@@ -26,7 +31,7 @@ The `api.func` file provides Proxmox API integration and diagnostic reporting fu
 ### Integration Points
 - Used by: All installation scripts for diagnostic reporting
 - Uses: Environment variables from build.func and other scripts
-- Provides: API communication and error reporting services
+- Provides: API communication, error reporting, and exit code descriptions
 
 ## Documentation Files
 
@@ -44,17 +49,18 @@ How api.func integrates with other components and provides API services.
 
 ## Key Features
 
-### Error Code Descriptions
-- **Comprehensive Coverage**: 50+ error codes with detailed explanations
-- **LXC-Specific Errors**: Container creation and management errors
-- **System Errors**: General system and network errors
+### Exit Code Descriptions
+- **Canonical source**: Single authoritative `explain_exit_code()` for the entire project
+- **Non-overlapping ranges**: Clean separation between error categories
+- **Comprehensive Coverage**: 60+ error codes with detailed explanations
+- **System Errors**: General system, curl, and network errors
 - **Signal Errors**: Process termination and signal errors
 
-### API Communication
-- **LXC Reporting**: Send LXC container installation data
-- **VM Reporting**: Send VM installation data
-- **Status Updates**: Report installation success/failure
-- **Diagnostic Data**: Anonymous usage analytics
+### PocketBase Integration
+- **Record Creation**: POST to create telemetry records with status `installing`
+- **Record Updates**: PATCH to update with final status, exit code, and error
+- **ID Tracking**: Stores `PB_RECORD_ID` for efficient updates
+- **Fallback Lookup**: Searches by `random_id` filter if record ID is lost
 
 ### Diagnostic Integration
 - **Optional Reporting**: Only sends data when diagnostics enabled
@@ -67,15 +73,13 @@ How api.func integrates with other components and provides API services.
 ### Basic API Setup
 ```bash
 #!/usr/bin/env bash
-# Basic API setup
-
 source api.func
 
 # Set up diagnostic reporting
 export DIAGNOSTICS="yes"
-export RANDOM_UUID="$(uuidgen)"
+export RANDOM_UUID="$(cat /proc/sys/kernel/random/uuid)"
 
-# Report installation start
+# Report installation start (creates PocketBase record)
 post_to_api
 ```
 
@@ -85,9 +89,9 @@ post_to_api
 source api.func
 
 # Get error description
-error_msg=$(get_error_description 127)
-echo "Error 127: $error_msg"
-# Output: Error 127: Command not found: Incorrect path or missing dependency.
+error_msg=$(explain_exit_code 137)
+echo "Error 137: $error_msg"
+# Output: Error 137: Killed (SIGKILL / Out of memory?)
 ```
 
 ### Status Updates
@@ -96,9 +100,9 @@ echo "Error 127: $error_msg"
 source api.func
 
 # Report successful installation
-post_update_to_api "success" 0
+post_update_to_api "done" 0
 
-# Report failed installation
+# Report failed installation with exit code
 post_update_to_api "failed" 127
 ```
 
@@ -106,7 +110,7 @@ post_update_to_api "failed" 127
 
 ### Required Variables
 - `DIAGNOSTICS`: Enable/disable diagnostic reporting ("yes"/"no")
-- `RANDOM_UUID`: Unique identifier for tracking
+- `RANDOM_UUID`: Unique identifier for session tracking
 
 ### Optional Variables
 - `CT_TYPE`: Container type (1 for LXC, 2 for VM)
@@ -115,33 +119,31 @@ post_update_to_api "failed" 127
 - `RAM_SIZE`: RAM size in MB
 - `var_os`: Operating system type
 - `var_version`: OS version
-- `DISABLEIP6`: IPv6 disable setting
-- `NSAPP`: Namespace application name
+- `NSAPP`: Application name
 - `METHOD`: Installation method
 
 ### Internal Variables
 - `POST_UPDATE_DONE`: Prevents duplicate status updates
-- `API_URL`: Community scripts API endpoint
-- `JSON_PAYLOAD`: API request payload
-- `RESPONSE`: API response
+- `PB_URL`: PocketBase base URL
+- `PB_API_URL`: Full API endpoint URL
+- `PB_RECORD_ID`: Stored PocketBase record ID for updates
 
-## Error Code Categories
+## Error Code Categories (Non-Overlapping Ranges)
 
-### General System Errors
-- **0-9**: Basic system errors
-- **18, 22, 28, 35**: Network and I/O errors
-- **56, 60**: TLS/SSL errors
-- **125-128**: Command execution errors
-- **129-143**: Signal errors
-- **152**: Resource limit errors
-- **255**: Unknown critical errors
-
-### LXC-Specific Errors
-- **100-101**: LXC installation errors
-- **200-209**: LXC creation and management errors
-
-### Docker Errors
-- **125**: Docker container start errors
+| Range | Category |
+|-------|----------|
+| 1-2 | Generic shell errors |
+| 6-35 | curl/wget network errors |
+| 100-102 | APT/DPKG package errors |
+| 124-143 | Command execution & signal errors |
+| 150-154 | Systemd/service errors |
+| 160-162 | Python/pip/uv errors |
+| 170-173 | PostgreSQL errors |
+| 180-183 | MySQL/MariaDB errors |
+| 190-193 | MongoDB errors |
+| 200-231 | Proxmox custom codes |
+| 243-249 | Node.js/npm errors |
+| 255 | DPKG fatal error |
 
 ## Best Practices
 
@@ -152,48 +154,56 @@ post_update_to_api "failed" 127
 4. Report both success and failure cases
 
 ### Error Handling
-1. Use appropriate error codes
-2. Provide meaningful error descriptions
+1. Use the correct non-overlapping exit code ranges
+2. Use `explain_exit_code()` from api.func (canonical source)
 3. Handle API communication failures gracefully
 4. Don't block installation on API failures
 
 ### API Usage
-1. Check for curl availability
-2. Handle network failures gracefully
-3. Use appropriate HTTP methods
-4. Include all required data
+1. Check for curl availability before API calls
+2. Handle network failures gracefully (all calls use `|| true`)
+3. Store and reuse PB_RECORD_ID for updates
+4. Use proper PocketBase REST methods (POST for create, PATCH for update)
 
 ## Troubleshooting
 
 ### Common Issues
 1. **API Communication Fails**: Check network connectivity and curl availability
-2. **Diagnostics Not Working**: Verify DIAGNOSTICS setting and RANDOM_UUID
-3. **Missing Error Descriptions**: Check error code coverage
-4. **Duplicate Updates**: POST_UPDATE_DONE prevents duplicates
+2. **Diagnostics Not Working**: Verify `DIAGNOSTICS=yes` in `/usr/local/community-scripts/diagnostics`
+3. **Status Update Fails**: Check that `PB_RECORD_ID` was captured or `random_id` filter works
+4. **Duplicate Updates**: `POST_UPDATE_DONE` flag prevents duplicates
 
 ### Debug Mode
 Enable diagnostic reporting for debugging:
 ```bash
 export DIAGNOSTICS="yes"
-export RANDOM_UUID="$(uuidgen)"
+export RANDOM_UUID="$(cat /proc/sys/kernel/random/uuid)"
 ```
 
 ### API Testing
-Test API communication:
+Test PocketBase connectivity:
+```bash
+curl -s http://db.community-scripts.org/api/health
+```
+
+Test record creation:
 ```bash
 source api.func
 export DIAGNOSTICS="yes"
 export RANDOM_UUID="test-$(date +%s)"
+export NSAPP="test"
+export CT_TYPE=1
 post_to_api
+echo "Record ID: $PB_RECORD_ID"
 ```
 
 ## Related Documentation
 
-- [core.func](../core.func/) - Core utilities and error handling
-- [error_handler.func](../error_handler.func/) - Error handling utilities
+- [core.func](../core.func/) - Core utilities
+- [error_handler.func](../error_handler.func/) - Error handling (fallback `explain_exit_code`)
 - [build.func](../build.func/) - Container creation with API integration
-- [tools.func](../tools.func/) - Extended utilities with API integration
+- [tools.func](../tools.func/) - Extended utilities
 
 ---
 
-*This documentation covers the api.func file which provides API communication and diagnostic reporting for all Proxmox Community Scripts.*
+*This documentation covers the api.func file which provides PocketBase communication and diagnostic reporting for all Proxmox Community Scripts.*

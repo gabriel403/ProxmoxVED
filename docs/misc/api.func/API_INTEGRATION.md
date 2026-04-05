@@ -2,26 +2,42 @@
 
 ## Overview
 
-This document describes how `api.func` integrates with other components in the Proxmox Community Scripts project, including dependencies, data flow, and API surface.
+This document describes how `api.func` integrates with other components in the Proxmox Community Scripts project. The telemetry backend is **PocketBase** at `http://db.community-scripts.org`, using the `_dev_telemetry_data` collection.
+
+## Architecture
+
+```
+Installation Scripts ──► api.func ──► PocketBase (db.community-scripts.org)
+                                         │
+                                         ├─ POST  → create record (status: "installing")
+                                         ├─ PATCH → update record (status: "sucess"/"failed")
+                                         └─ GET   → lookup record by random_id (fallback)
+```
+
+### Key Design Points
+- **POST** creates a new telemetry record and returns a PocketBase `id`
+- **PATCH** updates the existing record using that `id` (or a GET lookup by `random_id`)
+- All communication is fire-and-forget — failures never block the installation
+- `explain_exit_code()` is the canonical function for exit-code-to-description mapping
 
 ## Dependencies
 
 ### External Dependencies
 
 #### Required Commands
-- **`curl`**: HTTP client for API communication
-- **`uuidgen`**: Generate unique identifiers (optional, can use other methods)
+- **`curl`**: HTTP client for PocketBase API communication
 
 #### Optional Commands
-- **None**: No other external command dependencies
+- **`uuidgen`**: Generate unique identifiers (any UUID source works)
+- **`pveversion`**: Retrieve Proxmox VE version (gracefully skipped if missing)
 
 ### Internal Dependencies
 
 #### Environment Variables from Other Scripts
-- **build.func**: Provides container creation variables
+- **build.func**: Provides container creation variables (`CT_TYPE`, `DISK_SIZE`, etc.)
 - **vm-core.func**: Provides VM creation variables
-- **core.func**: Provides system information variables
-- **Installation scripts**: Provide application-specific variables
+- **core.func**: Provides system information
+- **Installation scripts**: Provide application-specific variables (`NSAPP`, `METHOD`)
 
 ## Integration Points
 
@@ -29,48 +45,41 @@ This document describes how `api.func` integrates with other components in the P
 
 #### LXC Container Reporting
 ```bash
-# build.func uses api.func for container reporting
 source core.func
 source api.func
 source build.func
 
-# Set up API reporting
 export DIAGNOSTICS="yes"
 export RANDOM_UUID="$(uuidgen)"
 
-# Container creation with API reporting
-create_container() {
-    # Set container parameters
-    export CT_TYPE=1
-    export DISK_SIZE="$var_disk"
-    export CORE_COUNT="$var_cpu"
-    export RAM_SIZE="$var_ram"
-    export var_os="$var_os"
-    export var_version="$var_version"
-    export NSAPP="$APP"
-    export METHOD="install"
+# Set container parameters
+export CT_TYPE=1
+export DISK_SIZE="$var_disk"
+export CORE_COUNT="$var_cpu"
+export RAM_SIZE="$var_ram"
+export var_os="$var_os"
+export var_version="$var_version"
+export NSAPP="$APP"
+export METHOD="install"
 
-    # Report installation start
-    post_to_api
+# POST → creates record in PocketBase, saves PB_RECORD_ID
+post_to_api
 
-    # Container creation using build.func
-    # ... build.func container creation logic ...
+# ... container creation via build.func ...
 
-    # Report completion
-    if [[ $? -eq 0 ]]; then
-        post_update_to_api "success" 0
-    else
-        post_update_to_api "failed" $?
-    fi
-}
+# PATCH → updates the record with final status
+if [[ $? -eq 0 ]]; then
+    post_update_to_api "done" 0
+else
+    post_update_to_api "failed" $?
+fi
 ```
 
 #### Error Reporting Integration
 ```bash
-# build.func uses api.func for error reporting
 handle_container_error() {
     local exit_code=$1
-    local error_msg=$(get_error_description $exit_code)
+    local error_msg=$(explain_exit_code $exit_code)
 
     echo "Container creation failed: $error_msg"
     post_update_to_api "failed" $exit_code
@@ -81,93 +90,54 @@ handle_container_error() {
 
 #### VM Installation Reporting
 ```bash
-# vm-core.func uses api.func for VM reporting
 source core.func
 source api.func
 source vm-core.func
 
-# Set up VM API reporting
+# VM reads DIAGNOSTICS from file
 mkdir -p /usr/local/community-scripts
 echo "DIAGNOSTICS=yes" > /usr/local/community-scripts/diagnostics
 
 export RANDOM_UUID="$(uuidgen)"
 
-# VM creation with API reporting
-create_vm() {
-    # Set VM parameters
-    export DISK_SIZE="${var_disk}G"
-    export CORE_COUNT="$var_cpu"
-    export RAM_SIZE="$var_ram"
-    export var_os="$var_os"
-    export var_version="$var_version"
-    export NSAPP="$APP"
-    export METHOD="install"
+# Set VM parameters
+export DISK_SIZE="${var_disk}G"
+export CORE_COUNT="$var_cpu"
+export RAM_SIZE="$var_ram"
+export var_os="$var_os"
+export var_version="$var_version"
+export NSAPP="$APP"
+export METHOD="install"
 
-    # Report VM installation start
-    post_to_api_vm
+# POST → creates record in PocketBase (ct_type=2, type="vm")
+post_to_api_vm
 
-    # VM creation using vm-core.func
-    # ... vm-core.func VM creation logic ...
+# ... VM creation via vm-core.func ...
 
-    # Report completion
-    post_update_to_api "success" 0
-}
-```
-
-### With core.func
-
-#### System Information Integration
-```bash
-# core.func provides system information for api.func
-source core.func
-source api.func
-
-# Get system information for API reporting
-get_system_info_for_api() {
-    # Get PVE version using core.func utilities
-    local pve_version=$(pveversion | awk -F'[/ ]' '{print $2}')
-
-    # Set API parameters
-    export var_os="$var_os"
-    export var_version="$var_version"
-
-    # Use core.func error handling with api.func reporting
-    if silent apt-get update; then
-        post_update_to_api "success" 0
-    else
-        post_update_to_api "failed" $?
-    fi
-}
+# PATCH → finalizes record
+post_update_to_api "done" 0
 ```
 
 ### With error_handler.func
 
 #### Error Description Integration
 ```bash
-# error_handler.func uses api.func for error descriptions
 source core.func
 source error_handler.func
 source api.func
 
-# Enhanced error handler with API reporting
 enhanced_error_handler() {
     local exit_code=${1:-$?}
     local command=${2:-${BASH_COMMAND:-unknown}}
 
-    # Get error description from api.func
-    local error_msg=$(get_error_description $exit_code)
+    # explain_exit_code() is the canonical error description function
+    local error_msg=$(explain_exit_code $exit_code)
 
-    # Display error information
     echo "Error $exit_code: $error_msg"
     echo "Command: $command"
 
-    # Report error to API
-    export DIAGNOSTICS="yes"
-    export RANDOM_UUID="$(uuidgen)"
+    # PATCH the telemetry record with failure details
     post_update_to_api "failed" $exit_code
-
-    # Use standard error handler
-    error_handler $exit_code $command
 }
 ```
 
@@ -175,182 +145,29 @@ enhanced_error_handler() {
 
 #### Installation Process Reporting
 ```bash
-# install.func uses api.func for installation reporting
 source core.func
 source api.func
 source install.func
 
-# Installation with API reporting
 install_package_with_reporting() {
     local package="$1"
 
-    # Set up API reporting
     export DIAGNOSTICS="yes"
     export RANDOM_UUID="$(uuidgen)"
     export NSAPP="$package"
     export METHOD="install"
 
-    # Report installation start
+    # POST → create telemetry record
     post_to_api
 
-    # Package installation using install.func
     if install_package "$package"; then
         echo "$package installed successfully"
-        post_update_to_api "success" 0
+        post_update_to_api "done" 0
         return 0
     else
         local exit_code=$?
-        local error_msg=$(get_error_description $exit_code)
+        local error_msg=$(explain_exit_code $exit_code)
         echo "$package installation failed: $error_msg"
-        post_update_to_api "failed" $exit_code
-        return $exit_code
-    fi
-}
-```
-
-### With alpine-install.func
-
-#### Alpine Installation Reporting
-```bash
-# alpine-install.func uses api.func for Alpine reporting
-source core.func
-source api.func
-source alpine-install.func
-
-# Alpine installation with API reporting
-install_alpine_with_reporting() {
-    local app="$1"
-
-    # Set up API reporting
-    export DIAGNOSTICS="yes"
-    export RANDOM_UUID="$(uuidgen)"
-    export NSAPP="$app"
-    export METHOD="install"
-    export var_os="alpine"
-
-    # Report Alpine installation start
-    post_to_api
-
-    # Alpine installation using alpine-install.func
-    if install_alpine_app "$app"; then
-        echo "Alpine $app installed successfully"
-        post_update_to_api "success" 0
-        return 0
-    else
-        local exit_code=$?
-        local error_msg=$(get_error_description $exit_code)
-        echo "Alpine $app installation failed: $error_msg"
-        post_update_to_api "failed" $exit_code
-        return $exit_code
-    fi
-}
-```
-
-### With alpine-tools.func
-
-#### Alpine Tools Reporting
-```bash
-# alpine-tools.func uses api.func for Alpine tools reporting
-source core.func
-source api.func
-source alpine-tools.func
-
-# Alpine tools with API reporting
-run_alpine_tool_with_reporting() {
-    local tool="$1"
-
-    # Set up API reporting
-    export DIAGNOSTICS="yes"
-    export RANDOM_UUID="$(uuidgen)"
-    export NSAPP="alpine-tools"
-    export METHOD="tool"
-
-    # Report tool execution start
-    post_to_api
-
-    # Run Alpine tool using alpine-tools.func
-    if run_alpine_tool "$tool"; then
-        echo "Alpine tool $tool executed successfully"
-        post_update_to_api "success" 0
-        return 0
-    else
-        local exit_code=$?
-        local error_msg=$(get_error_description $exit_code)
-        echo "Alpine tool $tool failed: $error_msg"
-        post_update_to_api "failed" $exit_code
-        return $exit_code
-    fi
-}
-```
-
-### With passthrough.func
-
-#### Hardware Passthrough Reporting
-```bash
-# passthrough.func uses api.func for hardware reporting
-source core.func
-source api.func
-source passthrough.func
-
-# Hardware passthrough with API reporting
-configure_passthrough_with_reporting() {
-    local hardware_type="$1"
-
-    # Set up API reporting
-    export DIAGNOSTICS="yes"
-    export RANDOM_UUID="$(uuidgen)"
-    export NSAPP="passthrough"
-    export METHOD="hardware"
-
-    # Report passthrough configuration start
-    post_to_api
-
-    # Configure passthrough using passthrough.func
-    if configure_passthrough "$hardware_type"; then
-        echo "Hardware passthrough configured successfully"
-        post_update_to_api "success" 0
-        return 0
-    else
-        local exit_code=$?
-        local error_msg=$(get_error_description $exit_code)
-        echo "Hardware passthrough failed: $error_msg"
-        post_update_to_api "failed" $exit_code
-        return $exit_code
-    fi
-}
-```
-
-### With tools.func
-
-#### Maintenance Operations Reporting
-```bash
-# tools.func uses api.func for maintenance reporting
-source core.func
-source api.func
-source tools.func
-
-# Maintenance operations with API reporting
-run_maintenance_with_reporting() {
-    local operation="$1"
-
-    # Set up API reporting
-    export DIAGNOSTICS="yes"
-    export RANDOM_UUID="$(uuidgen)"
-    export NSAPP="maintenance"
-    export METHOD="tool"
-
-    # Report maintenance start
-    post_to_api
-
-    # Run maintenance using tools.func
-    if run_maintenance_operation "$operation"; then
-        echo "Maintenance operation $operation completed successfully"
-        post_update_to_api "success" 0
-        return 0
-    else
-        local exit_code=$?
-        local error_msg=$(get_error_description $exit_code)
-        echo "Maintenance operation $operation failed: $error_msg"
         post_update_to_api "failed" $exit_code
         return $exit_code
     fi
@@ -361,117 +178,101 @@ run_maintenance_with_reporting() {
 
 ### Input Data
 
-#### Environment Variables from Other Scripts
-- **`CT_TYPE`**: Container type (1 for LXC, 2 for VM)
-- **`DISK_SIZE`**: Disk size in GB
-- **`CORE_COUNT`**: Number of CPU cores
-- **`RAM_SIZE`**: RAM size in MB
-- **`var_os`**: Operating system type
-- **`var_version`**: OS version
-- **`DISABLEIP6`**: IPv6 disable setting
-- **`NSAPP`**: Namespace application name
-- **`METHOD`**: Installation method
-- **`DIAGNOSTICS`**: Enable/disable diagnostic reporting
-- **`RANDOM_UUID`**: Unique identifier for tracking
+#### Environment Variables
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `CT_TYPE` | build.func | Container type (1=LXC, 2=VM) |
+| `DISK_SIZE` | build.func / vm-core.func | Disk size in GB (VMs may have `G` suffix) |
+| `CORE_COUNT` | build.func / vm-core.func | CPU core count |
+| `RAM_SIZE` | build.func / vm-core.func | RAM in MB |
+| `var_os` | core.func | Operating system type |
+| `var_version` | core.func | OS version |
+| `NSAPP` | Installation scripts | Application name |
+| `METHOD` | Installation scripts | Installation method |
+| `DIAGNOSTICS` | User config / diagnostics file | Enable/disable telemetry |
+| `RANDOM_UUID` | Caller | Session tracking UUID |
 
 #### Function Parameters
-- **Exit codes**: Passed to `get_error_description()` and `post_update_to_api()`
-- **Status information**: Passed to `post_update_to_api()`
-- **API endpoints**: Hardcoded in functions
+- **Exit codes**: Passed to `explain_exit_code()` and `post_update_to_api()`
+- **Status strings**: Passed to `post_update_to_api()` (`"done"`, `"failed"`)
 
 #### System Information
-- **PVE version**: Retrieved from `pveversion` command
-- **Disk size processing**: Processed for VM API (removes 'G' suffix)
-- **Error codes**: Retrieved from command exit codes
+- **PVE version**: Retrieved from `pveversion` command at runtime
+- **Disk size**: VM disk size is stripped of `G` suffix before sending
 
-### Processing Data
+### Processing
 
-#### API Request Preparation
-- **JSON payload creation**: Format data for API consumption
-- **Data validation**: Ensure required fields are present
-- **Error handling**: Handle missing or invalid data
-- **Content type setting**: Set appropriate HTTP headers
+#### Record Creation (POST)
+1. Validate prerequisites (curl, DIAGNOSTICS, RANDOM_UUID)
+2. Gather PVE version
+3. Build JSON payload with all telemetry fields
+4. `POST` to `PB_API_URL`
+5. Extract `PB_RECORD_ID` from PocketBase response (HTTP 200/201)
 
-#### Error Processing
-- **Error code mapping**: Map numeric codes to descriptions
-- **Error message formatting**: Format error descriptions
-- **Unknown error handling**: Handle unrecognized error codes
-- **Fallback messages**: Provide default error messages
-
-#### API Communication
-- **HTTP request preparation**: Prepare curl commands
-- **Response handling**: Capture HTTP response codes
-- **Error handling**: Handle network and API errors
-- **Duplicate prevention**: Prevent duplicate status updates
+#### Record Update (PATCH)
+1. Validate prerequisites + check `POST_UPDATE_DONE` flag
+2. Map status string → PocketBase select value (`"done"` → `"sucess"`)
+3. For failures: call `explain_exit_code()` to get error description
+4. Resolve record ID: use `PB_RECORD_ID` or fall back to GET lookup
+5. `PATCH` to `PB_API_URL/{record_id}` with status, error, exit_code
+6. Set `POST_UPDATE_DONE=true`
 
 ### Output Data
 
-#### API Communication
-- **HTTP requests**: Sent to community-scripts.org API
-- **Response codes**: Captured from API responses
-- **Error information**: Reported to API
-- **Status updates**: Sent to API
+#### PocketBase Records
+- **POST response**: Returns record with `id` field → stored in `PB_RECORD_ID`
+- **PATCH response**: Updates record fields (status, error, exit_code)
+- **GET response**: Used for record ID lookup by `random_id` filter
 
-#### Error Information
-- **Error descriptions**: Human-readable error messages
-- **Error codes**: Mapped to descriptions
-- **Context information**: Error context and details
-- **Fallback messages**: Default error messages
-
-#### System State
-- **POST_UPDATE_DONE**: Prevents duplicate updates
-- **RESPONSE**: Stores API response
-- **JSON_PAYLOAD**: Stores formatted API data
-- **API_URL**: Stores API endpoint
+#### Internal State
+| Variable | Description |
+|----------|-------------|
+| `PB_RECORD_ID` | PocketBase record ID for PATCH calls |
+| `POST_UPDATE_DONE` | Flag preventing duplicate updates |
 
 ## API Surface
 
 ### Public Functions
 
-#### Error Description
-- **`get_error_description()`**: Convert exit codes to explanations
-- **Parameters**: Exit code to explain
-- **Returns**: Human-readable explanation string
-- **Usage**: Called by other functions and scripts
+| Function | Purpose | HTTP Method |
+|----------|---------|-------------|
+| `explain_exit_code(code)` | Map exit code to description | — |
+| `post_to_api()` | Create LXC telemetry record | POST |
+| `post_to_api_vm()` | Create VM telemetry record | POST |
+| `post_update_to_api(status, exit_code)` | Update record with final status | PATCH |
 
-#### API Communication
-- **`post_to_api()`**: Send LXC installation data
-- **`post_to_api_vm()`**: Send VM installation data
-- **`post_update_to_api()`**: Send status updates
-- **Parameters**: Status and exit code (for updates)
-- **Returns**: None
-- **Usage**: Called by installation scripts
+### PocketBase Collection Schema
 
-### Internal Functions
+Collection: `_dev_telemetry_data`
 
-#### None
-- All functions in api.func are public
-- No internal helper functions
-- Direct implementation of all functionality
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | text (auto) | yes | PocketBase record ID (15 chars) |
+| `random_id` | text | yes | Session UUID (min 8 chars, unique) |
+| `type` | select | yes | `"lxc"`, `"vm"`, `"addon"`, `"pve"` |
+| `ct_type` | number | yes | 1 (LXC) or 2 (VM) |
+| `nsapp` | text | yes | Application name |
+| `status` | select | yes | `"installing"`, `"sucess"`, `"failed"`, `"unknown"` |
+| `disk_size` | number | no | Disk size in GB |
+| `core_count` | number | no | CPU cores |
+| `ram_size` | number | no | RAM in MB |
+| `os_type` | text | no | OS type |
+| `os_version` | text | no | OS version |
+| `pve_version` | text | no | Proxmox VE version |
+| `method` | text | no | Installation method |
+| `error` | text | no | Error description |
+| `exit_code` | number | no | Numeric exit code |
+| `created` | autodate | auto | Record creation timestamp |
+| `updated` | autodate | auto | Last update timestamp |
 
-### Global Variables
+> **Note**: The `status` field intentionally uses the spelling `"sucess"` (not `"success"`).
 
-#### Configuration Variables
-- **`DIAGNOSTICS`**: Diagnostic reporting setting
-- **`RANDOM_UUID`**: Unique tracking identifier
-- **`POST_UPDATE_DONE`**: Duplicate update prevention
-
-#### Data Variables
-- **`CT_TYPE`**: Container type
-- **`DISK_SIZE`**: Disk size
-- **`CORE_COUNT`**: CPU core count
-- **`RAM_SIZE`**: RAM size
-- **`var_os`**: Operating system
-- **`var_version`**: OS version
-- **`DISABLEIP6`**: IPv6 setting
-- **`NSAPP`**: Application namespace
-- **`METHOD`**: Installation method
-
-#### Internal Variables
-- **`API_URL`**: API endpoint URL
-- **`JSON_PAYLOAD`**: API request payload
-- **`RESPONSE`**: API response
-- **`DISK_SIZE_API`**: Processed disk size for VM API
+### Configuration Variables
+| Variable | Value |
+|----------|-------|
+| `PB_URL` | `http://db.community-scripts.org` |
+| `PB_COLLECTION` | `_dev_telemetry_data` |
+| `PB_API_URL` | `${PB_URL}/api/collections/${PB_COLLECTION}/records` |
 
 ## Integration Patterns
 
@@ -479,45 +280,39 @@ run_maintenance_with_reporting() {
 
 ```bash
 #!/usr/bin/env bash
-# Standard integration pattern
 
-# 1. Source core.func first
+# 1. Source dependencies
 source core.func
-
-# 2. Source api.func
 source api.func
 
-# 3. Set up API reporting
+# 2. Enable telemetry
 export DIAGNOSTICS="yes"
 export RANDOM_UUID="$(uuidgen)"
 
-# 4. Set application parameters
+# 3. Set application parameters
 export NSAPP="$APP"
 export METHOD="install"
 
-# 5. Report installation start
+# 4. POST → create telemetry record in PocketBase
 post_to_api
 
-# 6. Perform installation
+# 5. Perform installation
 # ... installation logic ...
 
-# 7. Report completion
-post_update_to_api "success" 0
+# 6. PATCH → update record with final status
+post_update_to_api "done" 0
 ```
 
 ### Minimal Integration Pattern
 
 ```bash
 #!/usr/bin/env bash
-# Minimal integration pattern
-
 source api.func
 
-# Basic error reporting
 export DIAGNOSTICS="yes"
 export RANDOM_UUID="$(uuidgen)"
 
-# Report failure
+# Report failure (PATCH via record lookup)
 post_update_to_api "failed" 127
 ```
 
@@ -525,13 +320,10 @@ post_update_to_api "failed" 127
 
 ```bash
 #!/usr/bin/env bash
-# Advanced integration pattern
-
 source core.func
 source api.func
 source error_handler.func
 
-# Set up comprehensive API reporting
 export DIAGNOSTICS="yes"
 export RANDOM_UUID="$(uuidgen)"
 export CT_TYPE=1
@@ -542,12 +334,12 @@ export var_os="debian"
 export var_version="12"
 export METHOD="install"
 
-# Enhanced error handling with API reporting
+# Enhanced error handler with PocketBase reporting
 enhanced_error_handler() {
     local exit_code=${1:-$?}
     local command=${2:-${BASH_COMMAND:-unknown}}
 
-    local error_msg=$(get_error_description $exit_code)
+    local error_msg=$(explain_exit_code $exit_code)
     echo "Error $exit_code: $error_msg"
 
     post_update_to_api "failed" $exit_code
@@ -556,88 +348,39 @@ enhanced_error_handler() {
 
 trap 'enhanced_error_handler' ERR
 
-# Advanced operations with API reporting
+# POST → create record
 post_to_api
+
 # ... operations ...
-post_update_to_api "success" 0
+
+# PATCH → finalize
+post_update_to_api "done" 0
 ```
 
 ## Error Handling Integration
 
 ### Automatic Error Reporting
-- **Error Descriptions**: Provides human-readable error messages
-- **API Integration**: Reports errors to community-scripts.org API
-- **Error Tracking**: Tracks error patterns for project improvement
-- **Diagnostic Data**: Contributes to anonymous usage analytics
-
-### Manual Error Reporting
-- **Custom Error Codes**: Use appropriate error codes for different scenarios
-- **Error Context**: Provide context information for errors
-- **Status Updates**: Report both success and failure cases
-- **Error Analysis**: Analyze error patterns and trends
+- **Error Descriptions**: `explain_exit_code()` provides human-readable messages for all recognized exit codes
+- **PocketBase Integration**: Errors are recorded via PATCH with `status`, `error`, and `exit_code` fields
+- **Error Tracking**: Anonymous telemetry helps track common failure patterns
+- **Diagnostic Data**: Contributes to project-wide analytics without PII
 
 ### API Communication Errors
-- **Network Failures**: Handle API communication failures gracefully
-- **Missing Prerequisites**: Check prerequisites before API calls
-- **Duplicate Prevention**: Prevent duplicate status updates
-- **Error Recovery**: Handle API errors without blocking installation
+- **Network Failures**: All API calls use `|| true` — failures are swallowed silently
+- **Missing Prerequisites**: Functions return early if curl, DIAGNOSTICS, or UUID are missing
+- **Duplicate Prevention**: `POST_UPDATE_DONE` flag ensures only one PATCH per session
+- **Record Lookup Fallback**: If `PB_RECORD_ID` is unset, a GET filter query resolves the record
 
 ## Performance Considerations
 
 ### API Communication Overhead
-- **Minimal Impact**: API calls add minimal overhead
-- **Asynchronous**: API calls don't block installation process
-- **Error Handling**: API failures don't affect installation
-- **Optional**: API reporting is optional and can be disabled
+- **Minimal Impact**: Only 2 HTTP calls per installation (1 POST + 1 PATCH)
+- **Non-blocking**: API failures never block the installation process
+- **Fire-and-forget**: curl stderr is suppressed (`2>/dev/null`)
+- **Optional**: Telemetry is entirely opt-in via `DIAGNOSTICS` setting
 
-### Memory Usage
-- **Minimal Footprint**: API functions use minimal memory
-- **Variable Reuse**: Global variables reused across functions
-- **No Memory Leaks**: Proper cleanup prevents memory leaks
-- **Efficient Processing**: Efficient JSON payload creation
-
-### Execution Speed
-- **Fast API Calls**: Quick API communication
-- **Efficient Error Processing**: Fast error code processing
-- **Minimal Delay**: Minimal delay in API operations
-- **Non-blocking**: API calls don't block installation
-
-## Security Considerations
-
-### Data Privacy
-- **Anonymous Reporting**: Only anonymous data is sent
-- **No Sensitive Data**: No sensitive information is transmitted
-- **User Control**: Users can disable diagnostic reporting
-- **Data Minimization**: Only necessary data is sent
-
-### API Security
-- **HTTPS**: API communication uses secure protocols
-- **Data Validation**: API data is validated before sending
-- **Error Handling**: API errors are handled securely
-- **No Credentials**: No authentication credentials are sent
-
-### Network Security
-- **Secure Communication**: Uses secure HTTP protocols
-- **Error Handling**: Network errors are handled gracefully
-- **No Data Leakage**: No sensitive data is leaked
-- **Secure Endpoints**: Uses trusted API endpoints
-
-## Future Integration Considerations
-
-### Extensibility
-- **New API Endpoints**: Easy to add new API endpoints
-- **Additional Data**: Easy to add new data fields
-- **Error Codes**: Easy to add new error code descriptions
-- **API Versions**: Easy to support new API versions
-
-### Compatibility
-- **API Versioning**: Compatible with different API versions
-- **Data Format**: Compatible with different data formats
-- **Error Codes**: Compatible with different error code systems
-- **Network Protocols**: Compatible with different network protocols
-
-### Performance
-- **Optimization**: API communication can be optimized
-- **Caching**: API responses can be cached
-- **Batch Operations**: Multiple operations can be batched
-- **Async Processing**: API calls can be made asynchronous
+### Security Considerations
+- **Anonymous**: No personal data is transmitted — only system specs and app names
+- **No Auth Required**: PocketBase collection rules allow anonymous create/update
+- **User Control**: Users can disable telemetry by setting `DIAGNOSTICS=no`
+- **HTTP**: API uses HTTP (not HTTPS) for compatibility with minimal containers

@@ -13,13 +13,6 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Dependencies"
-$STD apt-get install -y \
-  python3 \
-  python3-requests \
-  python3-dotenv
-msg_ok "Installed Dependencies"
-
 setup_uv
 
 setup_deb822_repo "influxdb" \
@@ -29,12 +22,12 @@ setup_deb822_repo "influxdb" \
   "main"
 
 msg_info "Installing InfluxDB"
-$STD apt-get install -y influxdb
+$STD apt install -y influxdb
 msg_ok "Installed InfluxDB"
 
 msg_info "Installing Chronograf"
 CHRONOGRAF_VERSION=$(get_latest_github_release "influxdata/chronograf")
-fetch_and_deploy_archive "https://dl.influxdata.com/chronograf/releases/chronograf_${CHRONOGRAF_VERSION}_amd64.deb"
+fetch_and_deploy_from_url "https://dl.influxdata.com/chronograf/releases/chronograf_${CHRONOGRAF_VERSION}_amd64.deb" ""
 msg_ok "Installed Chronograf"
 
 msg_info "Configuring InfluxDB"
@@ -57,22 +50,21 @@ setup_deb822_repo "grafana" \
 msg_info "Installing Grafana"
 $STD apt install -y grafana
 $STD systemctl enable --now grafana-server
-sleep 20
 msg_ok "Installed Grafana"
 
 msg_info "Configuring Grafana"
 GRAFANA_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | cut -c1-13)
-$STD grafana-cli admin reset-admin-password "${GRAFANA_PASS}"
+retries=0
+while ! grafana-cli admin reset-admin-password "${GRAFANA_PASS}" &>/dev/null; do
+  ((retries++))
+  [[ $retries -ge 30 ]] && break
+  sleep 2
+done
 $STD grafana-cli plugins install marcusolsson-hourly-heatmap-panel
 $STD systemctl restart grafana-server
-{
-  echo "Grafana Credentials"
-  echo "Grafana User: admin"
-  echo "Grafana Password: ${GRAFANA_PASS}"
-} >>~/garmin-grafana.creds
 msg_ok "Configured Grafana"
 
-fetch_and_deploy_gh_release "garmin-grafana" "arpanghosh8453/garmin-grafana"
+fetch_and_deploy_gh_release "garmin-grafana" "arpanghosh8453/garmin-grafana" "tarball"
 
 msg_info "Configuring garmin-grafana"
 mkdir -p /opt/garmin-grafana/.garminconnect
@@ -102,20 +94,25 @@ INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}
 INFLUXDB_DATABASE=${INFLUXDB_NAME}
 GARMIN_IS_CN=${GARMIN_CN}
 TOKEN_DIR=/opt/garmin-grafana/.garminconnect
+GRAFANA_USER=admin
+GRAFANA_PASSWORD=${GRAFANA_PASS}
 EOF
 
-if [ -z "$(ls -A /opt/garmin-grafana/.garminconnect)" ]; then
+if [[ -z "$(ls -A /opt/garmin-grafana/.garminconnect)" ]]; then
   read -r -p "Please enter your Garmin Connect Email: " GARMIN_EMAIL
   read -r -p "Please enter your Garmin Connect Password (used to generate token, NOT stored): " GARMIN_PASSWORD
   read -r -p "Please enter your MFA Code (leave blank if not applicable): " GARMIN_MFA
+  GARMIN_BASE64_PASSWORD=$(echo -n "${GARMIN_PASSWORD}" | base64 -w0)
   msg_info "Creating Garmin credentials (timeout 60s)"
-  timeout 60s uv run --env-file /opt/garmin-grafana/.env --project /opt/garmin-grafana/ /opt/garmin-grafana/src/garmin_grafana/garmin_fetch.py <<EOF
-${GARMIN_EMAIL}
-${GARMIN_PASSWORD}
-${GARMIN_MFA}
-EOF
-  unset GARMIN_EMAIL GARMIN_PASSWORD GARMIN_MFA
-  if [ -z "$(ls -A /opt/garmin-grafana/.garminconnect)" ]; then
+  if [[ -n "${GARMIN_MFA}" ]]; then
+    echo "${GARMIN_MFA}" | GARMINCONNECT_EMAIL="${GARMIN_EMAIL}" GARMINCONNECT_BASE64_PASSWORD="${GARMIN_BASE64_PASSWORD}" \
+      timeout 60s uv run --env-file /opt/garmin-grafana/.env --project /opt/garmin-grafana/ /opt/garmin-grafana/src/garmin_grafana/garmin_fetch.py
+  else
+    GARMINCONNECT_EMAIL="${GARMIN_EMAIL}" GARMINCONNECT_BASE64_PASSWORD="${GARMIN_BASE64_PASSWORD}" \
+      timeout 60s uv run --env-file /opt/garmin-grafana/.env --project /opt/garmin-grafana/ /opt/garmin-grafana/src/garmin_grafana/garmin_fetch.py </dev/null
+  fi
+  unset GARMIN_EMAIL GARMIN_PASSWORD GARMIN_MFA GARMIN_BASE64_PASSWORD
+  if [[ -z "$(ls -A /opt/garmin-grafana/.garminconnect)" ]]; then
     msg_error "Failed to create token"
     exit 1
   fi
@@ -144,13 +141,14 @@ msg_info "Creating Service"
 cat <<EOF >/etc/systemd/system/garmin-grafana.service
 [Unit]
 Description=garmin-grafana Service
-After=network.target
+After=network.target influxdb.service
+Requires=influxdb.service
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/garmin-grafana
 EnvironmentFile=/opt/garmin-grafana/.env
-ExecStart=/root/.local/bin/uv run --project /opt/garmin-grafana/ /opt/garmin-grafana/src/garmin_grafana/garmin_fetch.py
+ExecStart=$(which uv) run --project /opt/garmin-grafana/ /opt/garmin-grafana/src/garmin_grafana/garmin_fetch.py
 Restart=on-failure
 RestartSec=5
 

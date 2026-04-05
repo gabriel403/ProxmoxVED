@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
 # Source: https://github.com/ente-io/ente
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
@@ -29,15 +29,18 @@ NODE_VERSION="24" NODE_MODULE="yarn" setup_nodejs
 RUST_CRATES="wasm-pack" setup_rust
 $STD rustup target add wasm32-unknown-unknown
 
-
-ENTE_CLI_VERSION=$(curl -s https://api.github.com/repos/ente-io/ente/releases | jq -r '[.[] | select(.tag_name | startswith("cli-v"))][0].tag_name')
 fetch_and_deploy_gh_release "ente-server" "ente-io/ente" "tarball" "latest" "/opt/ente"
-fetch_and_deploy_gh_release "ente-cli" "ente-io/ente" "prebuild" "$ENTE_CLI_VERSION" "/usr/local/bin" "ente-$ENTE_CLI_VERSION-linux-amd64.tar.gz"
 
-$STD mkdir -p /opt/ente/cli
+msg_info "Building Ente CLI"
+cd /opt/ente/cli
+$STD go build -o /usr/local/bin/ente .
+chmod +x /usr/local/bin/ente
+msg_ok "Built Ente CLI"
+
+$STD mkdir -p /opt/ente/cli-config
 msg_info "Configuring Ente CLI"
 cat <<EOF >>~/.bashrc
-export ENTE_CLI_SECRETS_PATH=/opt/ente/cli/secrets.txt
+export ENTE_CLI_SECRETS_PATH=/opt/ente/cli-config/secrets.txt
 export PATH="/usr/local/bin:$PATH"
 EOF
 $STD source ~/.bashrc
@@ -47,28 +50,6 @@ endpoint:
     api: http://localhost:8080
 EOF
 msg_ok "Configured Ente CLI"
-
-msg_info "Saving Ente Credentials"
-{
-  echo "Important Configuration Notes:"
-  echo "- Frontend is built with IP: $LOCAL_IP"
-  echo "- If IP changes, run: /opt/ente/rebuild-frontend.sh"
-  echo "- Museum API: http://$LOCAL_IP:8080"
-  echo "- Photos UI: http://$LOCAL_IP:3000"
-  echo "- Accounts UI: http://$LOCAL_IP:3001"
-  echo "- Auth UI: http://$LOCAL_IP:3003"
-  echo ""
-  echo "Post-Installation Steps Required:"
-  echo "1. Create your first user account via the web UI"
-  echo "2. Check museum logs for email verification code:"
-  echo "   journalctl -u ente-museum -n 100 | grep -i 'verification'"
-  echo "3. Use verification code to complete account setup"
-  echo "4. Remove subscription limit (replace <email> with your account):"
-  echo "   ente admin update-subscription -a <email> -u <email> --no-limit"
-  echo ""
-  echo "Note: Email verification requires manual intervention since SMTP is not configured"
-} >>~/ente.creds
-msg_ok "Saved Ente Credentials"
 
 msg_info "Building Museum (server)"
 cd /opt/ente/server
@@ -94,6 +75,42 @@ SECRET_HASH=$(go run tools/gen-random-keys/main.go 2>/dev/null | grep "hash" | a
 SECRET_JWT=$(go run tools/gen-random-keys/main.go 2>/dev/null | grep "jwt" | awk '{print $2}')
 msg_ok "Generated Secrets"
 
+msg_info "Installing MinIO"
+MINIO_PASS=$(openssl rand -base64 18)
+curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+chmod +x /usr/local/bin/minio
+curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
+chmod +x /usr/local/bin/mc
+mkdir -p /opt/minio/data
+cat <<EOF >/etc/default/minio
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=${MINIO_PASS}
+MINIO_VOLUMES=/opt/minio/data
+MINIO_OPTS="--address :3200 --console-address :3201"
+EOF
+cat <<'EOF' >/etc/systemd/system/minio.service
+[Unit]
+Description=MinIO Object Storage
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/minio
+ExecStart=/usr/local/bin/minio server $MINIO_VOLUMES $MINIO_OPTS
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now minio
+sleep 3
+$STD mc alias set local http://localhost:3200 minioadmin "${MINIO_PASS}"
+$STD mc mb --ignore-existing local/b2-eu-cen
+$STD mc mb --ignore-existing local/wasabi-eu-central-2-v3
+$STD mc mb --ignore-existing local/scw-eu-fr-v3
+msg_ok "Installed MinIO"
+
 msg_info "Creating museum.yaml"
 cat <<EOF >/opt/ente/server/museum.yaml
 db:
@@ -106,12 +123,25 @@ db:
 s3:
   are_local_buckets: true
   use_path_style_urls: true
-  local-dev:
-    key: dummy
-    secret: dummy
-    endpoint: localhost:3200
+  b2-eu-cen:
+    key: minioadmin
+    secret: $MINIO_PASS
+    endpoint: ${LOCAL_IP}:3200
     region: eu-central-2
-    bucket: ente-dev
+    bucket: b2-eu-cen
+  wasabi-eu-central-2-v3:
+    key: minioadmin
+    secret: $MINIO_PASS
+    endpoint: ${LOCAL_IP}:3200
+    region: eu-central-2
+    bucket: wasabi-eu-central-2-v3
+    compliance: false
+  scw-eu-fr-v3:
+    key: minioadmin
+    secret: $MINIO_PASS
+    endpoint: ${LOCAL_IP}:3200
+    region: eu-central-2
+    bucket: scw-eu-fr-v3
 
 apps:
   public-albums: http://${LOCAL_IP}:3002
@@ -124,15 +154,6 @@ key:
 
 jwt:
   secret: $SECRET_JWT
-
-# SMTP not configured - verification codes will appear in logs
-# To configure SMTP, add:
-# smtp:
-#   host: your-smtp-server
-#   port: 587
-#   username: your-username
-#   password: your-password
-#   email: noreply@yourdomain.com
 EOF
 msg_ok "Created museum.yaml"
 
@@ -308,43 +329,192 @@ cat <<EOF >/etc/caddy/Caddyfile
     }
 }
 
-# Museum API Proxy
-:8080 {
-    reverse_proxy localhost:8080
-
-    header {
-        Access-Control-Allow-Origin *
-        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-        Access-Control-Allow-Headers *
-    }
-}
 EOF
 systemctl reload caddy
 msg_ok "Configured Caddy"
 
 msg_info "Creating helper scripts"
-cat <<'EOF' >/usr/local/bin/ente-get-verification
+cat <<'SETUP' >/usr/local/bin/ente-setup
 #!/usr/bin/env bash
+<<<<<<< HEAD
+set -e
+
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+echo "=== Ente First-Time Setup ==="
+echo ""
+read -r -p "Enter your account email: " EMAIL
+if [ -z "$EMAIL" ]; then echo "Error: Email is required"; exit 1; fi
+=======
 echo "Searching for verification codes in museum logs..."
-journalctl -u ente-museum --no-pager | grep -i "verification\|verify\|code" | tail -20
+journalctl -u ente-museum --no-pager | grep -oP 'SendEmailOTT.*ott:\s*\K\d+' | tail -5
+if [[ $? -ne 0 ]] || [[ -z "$(journalctl -u ente-museum --no-pager | grep -oP 'ott:\s*\K\d+' | tail -1)" ]]; then
+  echo "No codes found via ott pattern. Showing recent relevant logs:"
+  journalctl -u ente-museum --no-pager -n 50 | grep -i "verification\|verify\|code\|ott" | tail -20
+fi
 EOF
 chmod +x /usr/local/bin/ente-get-verification
+
+cat <<'SETUPEOF' >/usr/local/bin/ente-setup
+#!/usr/bin/env bash
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+DB_NAME="ente_db"
+DB_USER="ente"
+
+echo "=== Ente First-Time Setup ==="
+echo ""
+read -r -p "Enter your account email: " EMAIL
+
+if [[ -z "$EMAIL" ]]; then
+  echo "Error: Email is required."
+  exit 1
+fi
+>>>>>>> bb7e2e03 (fix(postiz,ente,lobehub): address testing feedback)
+
+echo ""
+echo "Step 1/4: Register your account"
+echo "  Open the web UI: http://${LOCAL_IP}:3000"
+<<<<<<< HEAD
+echo "  Create an account with: $EMAIL"
+=======
+echo "  Create an account with: ${EMAIL}"
+>>>>>>> bb7e2e03 (fix(postiz,ente,lobehub): address testing feedback)
+echo ""
+read -r -p "Press ENTER after you submitted the signup form..."
+
+echo ""
+echo "Step 2/4: Getting verification code from logs..."
+<<<<<<< HEAD
+for i in $(seq 1 10); do
+    OTT=$(journalctl -u ente-museum --no-pager -n 100 2>/dev/null | grep -oP "Skipping sending email to ${EMAIL}.*Verification code: \K[0-9]+" | tail -1)
+    if [ -n "$OTT" ]; then break; fi
+    sleep 1
+done
+if [ -z "$OTT" ]; then
+    echo "Could not auto-detect code. Searching all recent codes..."
+    journalctl -u ente-museum --no-pager -n 200 | grep "Verification code" | tail -5
+    echo ""
+    echo "Enter the code shown above in the web UI, then press ENTER."
+    read -r -p "Press ENTER after verification..."
+else
+    echo "  Your verification code: $OTT"
+    echo "  Enter this code in the web UI to complete registration."
+    echo ""
+    read -r -p "Press ENTER after you verified the code..."
+fi
+
+DB_NAME="$(grep -A4 '^db:' /opt/ente/server/museum.yaml | awk '/name:/{print $2}')"
+DB_PASS="$(grep -A5 '^db:' /opt/ente/server/museum.yaml | awk '/password:/{print $2}')"
+USER_ID=$(PGPASSWORD="$DB_PASS" psql -h 127.0.0.1 -U ente -d "$DB_NAME" -tAc "SELECT user_id FROM users ORDER BY user_id LIMIT 1;")
+if [ -z "$USER_ID" ]; then
+    echo "Error: No verified users found in database."
+    echo "Make sure you completed the verification step in the web UI."
+    exit 1
+fi
+echo "Found user ID: $USER_ID"
+
+echo ""
+echo "Step 3/4: Whitelisting admin in museum.yaml..."
+if grep -q "^internal:" /opt/ente/server/museum.yaml; then
+    sed -i "/^  admin:/d" /opt/ente/server/museum.yaml
+    sed -i "/^internal:/a\\  admin: $USER_ID" /opt/ente/server/museum.yaml
+else
+    printf '\ninternal:\n  admin: %s\n' "$USER_ID" >> /opt/ente/server/museum.yaml
+fi
+systemctl restart ente-museum
+sleep 2
+echo "Done."
+
+echo ""
+echo "Step 4/4: Adding account to Ente CLI & upgrading subscription..."
+mkdir -p /opt/ente_data/photos
+export ENTE_CLI_SECRETS_PATH=/opt/ente/cli-config/secrets.txt
+printf 'photos\n/opt/ente_data/photos\n' | ente account add
+ente admin update-subscription -a "$EMAIL" -u "$EMAIL" --no-limit True
+echo ""
+echo "=== Setup Complete ==="
+echo "You can now use Ente Photos/Auth with unlimited storage."
+SETUP
+chmod +x /usr/local/bin/ente-setup
+=======
+sleep 3
+CODE=$(journalctl -u ente-museum --no-pager -n 100 | grep -oP 'ott:\s*\K\d+' | tail -1)
+if [[ -n "$CODE" ]]; then
+  echo "  Your verification code: ${CODE}"
+  echo "  Enter this code in the web UI to complete registration."
+else
+  echo "  Could not find code automatically. Check manually:"
+  echo "  journalctl -u ente-museum --no-pager | grep -i ott"
+fi
+echo ""
+read -r -p "Press ENTER after you verified the code..."
+
+USER_ID=$(su -c "psql -t -d ${DB_NAME} -c \"SELECT user_id FROM users WHERE email = '$(echo "$EMAIL" | sed "s/'/''/g")';\"" postgres 2>/dev/null | xargs)
+echo "Found user ID: ${USER_ID}"
+
+echo ""
+echo "Step 3/4: Whitelisting admin in museum.yaml..."
+if grep -q "internal:" /opt/ente/server/museum.yaml; then
+  if ! grep -qF "$EMAIL" /opt/ente/server/museum.yaml; then
+    sed -i "/admins:/a\\    - ${EMAIL}" /opt/ente/server/museum.yaml
+  fi
+else
+  cat <<ADMEOF >>/opt/ente/server/museum.yaml
+
+internal:
+  admins:
+    - ${EMAIL}
+ADMEOF
+fi
+systemctl restart ente-museum
+sleep 2
+echo "Done."
+
+echo ""
+echo "Step 4/4: Upgrading subscription..."
+if [[ -n "$USER_ID" ]]; then
+  su -c "psql -d ${DB_NAME} -c \"UPDATE subscriptions SET storage_in_mbs_per_plan = 10737418240, expiry_time = 2524608000000000 WHERE user_id = ${USER_ID};\"" postgres 2>/dev/null
+  ROWS=$(su -c "psql -t -d ${DB_NAME} -c \"SELECT count(*) FROM subscriptions WHERE user_id = ${USER_ID};\"" postgres 2>/dev/null | xargs)
+  if [[ "$ROWS" == "0" ]]; then
+    su -c "psql -d ${DB_NAME} -c \"INSERT INTO subscriptions (user_id, storage_in_mbs_per_plan, expiry_time, product_id, payment_provider, transaction_id, original_transaction_id) VALUES (${USER_ID}, 10737418240, 2524608000000000, 'self_hosted_unlimited', 'admin', 'admin_setup', 'admin_setup');\"" postgres 2>/dev/null
+  fi
+  echo "Subscription upgraded to unlimited storage."
+else
+  echo "Warning: Could not find user ID. Try running: ente-upgrade-subscription ${EMAIL}"
+fi
+
+echo ""
+echo "=== Setup complete ==="
+echo "Access Ente Photos at: http://${LOCAL_IP}:3000"
+SETUPEOF
+chmod +x /usr/local/bin/ente-setup
 
 cat <<'EOF' >/usr/local/bin/ente-upgrade-subscription
 #!/usr/bin/env bash
 if [ -z "$1" ]; then
-    echo "Usage: ente-upgrade-subscription <email>"
-    echo "Example: ente-upgrade-subscription user@example.com"
-    exit 1
+  echo "Usage: ente-upgrade-subscription <email>"
+  echo "Example: ente-upgrade-subscription user@example.com"
+  exit 1
 fi
 EMAIL="$1"
+DB_NAME="ente_db"
 echo "Upgrading subscription for: $EMAIL"
-ente admin update-subscription -a "$EMAIL" -u "$EMAIL" --no-limit
+USER_ID=$(su -c "psql -t -d ${DB_NAME} -c \"SELECT user_id FROM users WHERE email = '$(echo "$EMAIL" | sed "s/'/''/g")';\"" postgres 2>/dev/null | xargs)
+if [[ -z "$USER_ID" ]]; then
+  echo "Error: User not found in database."
+  exit 1
+fi
+su -c "psql -d ${DB_NAME} -c \"UPDATE subscriptions SET storage_in_mbs_per_plan = 10737418240, expiry_time = 2524608000000000 WHERE user_id = ${USER_ID};\"" postgres 2>/dev/null
+ROWS=$(su -c "psql -t -d ${DB_NAME} -c \"SELECT count(*) FROM subscriptions WHERE user_id = ${USER_ID};\"" postgres 2>/dev/null | xargs)
+if [[ "$ROWS" == "0" ]]; then
+  su -c "psql -d ${DB_NAME} -c \"INSERT INTO subscriptions (user_id, storage_in_mbs_per_plan, expiry_time, product_id, payment_provider, transaction_id, original_transaction_id) VALUES (${USER_ID}, 10737418240, 2524608000000000, 'self_hosted_unlimited', 'admin', 'admin_setup', 'admin_setup');\"" postgres 2>/dev/null
+fi
+echo "Done. Subscription upgraded to unlimited storage for: $EMAIL"
 EOF
 chmod +x /usr/local/bin/ente-upgrade-subscription
+>>>>>>> bb7e2e03 (fix(postiz,ente,lobehub): address testing feedback)
 
 msg_ok "Created helper scripts"
 
 motd_ssh
 customize
-#cleanup_lxc
+cleanup_lxc

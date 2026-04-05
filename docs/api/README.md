@@ -1,37 +1,29 @@
-# API Integration Documentation (/api)
-
-This directory contains comprehensive documentation for API integration and the `/api` directory.
+# API Integration Documentation
 
 ## Overview
 
-The `/api` directory contains the Proxmox Community Scripts API backend for diagnostic reporting, telemetry, and analytics integration.
+The telemetry and diagnostics API uses **PocketBase** as backend, hosted at `http://db.community-scripts.org`. All telemetry data is stored in the `_dev_telemetry_data` collection.
+
+The Go/MongoDB API server (`/api` directory) has been replaced entirely by PocketBase.
 
 ## Key Components
 
-### Main API Service
-Located in `/api/main.go`:
+### PocketBase Backend
+- **URL**: `http://db.community-scripts.org`
+- **Collection**: `_dev_telemetry_data`
+- **Admin UI**: `http://db.community-scripts.org/_/#/collections`
 - RESTful API for receiving telemetry data
 - Installation statistics tracking
 - Error reporting and analytics
-- Performance monitoring
 
 ### Integration with Scripts
 The API is integrated into all installation scripts via `api.func`:
 - Sends installation start/completion events
-- Reports errors and exit codes
+- Reports errors and exit codes with numeric values
 - Collects anonymous usage statistics
 - Enables project analytics
 
 ## Documentation Structure
-
-API documentation covers:
-- API endpoint specifications
-- Integration methods
-- Data formats and schemas
-- Error handling
-- Privacy and data handling
-
-## Key Resources
 
 - **[misc/api.func/](../misc/api.func/)** - API function library documentation
 - **[misc/api.func/README.md](../misc/api.func/README.md)** - Quick reference
@@ -42,48 +34,92 @@ API documentation covers:
 The `api.func` library provides:
 
 ### `post_to_api()`
-Send container installation data to API.
+Send LXC container installation data to PocketBase.
 
-**Usage**:
-```bash
-post_to_api CTID STATUS APP_NAME
-```
+Creates a new record in `_dev_telemetry_data` with status `installing`.
 
-### `post_update_to_api()`
-Report application update status.
+### `post_to_api_vm()`
+Send VM installation data to PocketBase.
 
-**Usage**:
-```bash
-post_update_to_api CTID APP_NAME VERSION
-```
+Creates a new record with `type=vm` and `ct_type=2`.
 
-### `get_error_description()`
+### `post_update_to_api(status, exit_code)`
+Update installation status via PocketBase PATCH.
+
+Maps status values:
+- `"done"` → PocketBase status `"sucess"`
+- `"failed"` → PocketBase status `"failed"`
+
+### `explain_exit_code(code)`
 Get human-readable error description from exit code.
 
 **Usage**:
 ```bash
-ERROR_DESC=$(get_error_description EXIT_CODE)
+ERROR_DESC=$(explain_exit_code 137)
+# → "Killed (SIGKILL / Out of memory?)"
 ```
+
+## PocketBase Collection Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | text (auto) | yes | PocketBase record ID |
+| `random_id` | text | yes | Session UUID (unique) |
+| `type` | select | yes | `lxc`, `vm`, `addon`, `pve` |
+| `ct_type` | number | yes | 1=LXC, 2=VM |
+| `nsapp` | text | yes | Application name |
+| `status` | select | yes | `installing`, `sucess`, `failed`, `unknown` |
+| `disk_size` | number | no | Disk size in GB |
+| `core_count` | number | no | CPU cores |
+| `ram_size` | number | no | RAM in MB |
+| `os_type` | text | no | OS type (debian, ubuntu, etc.) |
+| `os_version` | text | no | OS version |
+| `pve_version` | text | no | Proxmox VE version |
+| `method` | text | no | Installation method |
+| `error` | text | no | Error description |
+| `exit_code` | number | no | Numeric exit code |
+| `created` | autodate | auto | Record creation timestamp |
+| `updated` | autodate | auto | Last update timestamp |
+
+## API Endpoints (PocketBase REST)
+
+**Base URL**: `http://db.community-scripts.org`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/collections/_dev_telemetry_data/records` | Create telemetry record |
+| `PATCH` | `/api/collections/_dev_telemetry_data/records/{id}` | Update record status |
+| `GET` | `/api/collections/_dev_telemetry_data/records` | List/search records |
+
+### Query Parameters (GET)
+- `filter` – PocketBase filter syntax, e.g. `(nsapp='debian' && status='failed')`
+- `sort` – Sort fields, e.g. `-created,nsapp`
+- `page` / `perPage` – Pagination
+- `fields` – Limit returned fields
 
 ## API Integration Points
 
 ### In Container Creation (`ct/AppName.sh`)
-- Called by build.func to report container creation
-- Sends initial container setup data
-- Reports success or failure
+- Called by `build.func` to report container creation via `post_to_api`
+- Sends initial container setup data with status `installing`
+- Reports success or failure via `post_update_to_api`
 
-### In Installation Scripts (`install/appname-install.sh`)
-- Called at start of installation
-- Called on installation completion
-- Called on error conditions
+### In VM Creation (`vm/AppName.sh`)
+- Calls `post_to_api_vm` after VM creation
+- Status updates via `post_update_to_api`
 
-### Data Collected
-- Container/VM ID
-- Application name and version
-- Installation duration
-- Success/failure status
-- Error codes (if failure)
-- Anonymous usage metrics
+### Data Flow
+```
+Installation Scripts
+    │
+    ├─ Call: api.func functions
+    │
+    ├─ POST → PocketBase (create record, status=installing)
+    │           └─ Returns record ID (stored in PB_RECORD_ID)
+    │
+    └─ PATCH → PocketBase (update record with final status)
+                └─ status=sucess/failed + exit_code + error
+```
 
 ## Privacy
 
@@ -92,55 +128,18 @@ All API data:
 - ✅ Aggregated for statistics
 - ✅ Used only for project improvement
 - ✅ No tracking of user identities
-- ✅ Can be disabled if desired
-
-## API Architecture
-
-```
-Installation Scripts
-    │
-    ├─ Call: api.func functions
-    │
-    └─ POST to: https://api.community-scripts.org
-                │
-                ├─ Receives data
-                ├─ Validates format
-                ├─ Stores metrics
-                └─ Aggregates statistics
-                    │
-                    └─ Used for:
-                       ├─ Download tracking
-                       ├─ Error trending
-                       ├─ Feature usage stats
-                       └─ Project health monitoring
-```
-
-## Common API Tasks
-
-- **Enable API reporting** → Built-in by default, no configuration needed
-- **Disable API** → Set `api_disable="yes"` before running
-- **View API data** → Visit https://community-scripts.org/stats
-- **Report API errors** → [GitHub Issues](https://github.com/community-scripts/ProxmoxVED/issues)
+- ✅ Can be disabled via diagnostics settings
 
 ## Debugging API Issues
 
 If API calls fail:
 1. Check internet connectivity
-2. Verify API endpoint availability
+2. Verify PocketBase endpoint: `curl -s http://db.community-scripts.org/api/health`
 3. Review error codes in [EXIT_CODES.md](../EXIT_CODES.md)
-4. Check API function logs
-5. Report issues on GitHub
-
-## API Endpoint
-
-**Base URL**: `https://api.community-scripts.org`
-
-**Endpoints**:
-- `POST /install` - Report container installation
-- `POST /update` - Report application update
-- `GET /stats` - Public statistics
+4. Check that `DIAGNOSTICS=yes` in `/usr/local/community-scripts/diagnostics`
+5. Report issues on [GitHub](https://git.community-scripts.org/community-scripts/ProxmoxVED/issues)
 
 ---
 
-**Last Updated**: December 2025
+**Last Updated**: February 2026
 **Maintainers**: community-scripts team

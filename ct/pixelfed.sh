@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/build.func)
+
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
@@ -35,14 +36,17 @@ function update_script() {
     msg_ok "Services stopped"
 
     msg_info "Backing up Configuration"
-    cp /opt/pixelfed/.env /tmp/pixelfed.env.bak
+    cp /opt/pixelfed/.env /opt/pixelfed.env.bak
+    cp -r /opt/pixelfed/storage /opt/pixelfed-storage.bak
     msg_ok "Configuration backed up"
 
-    fetch_and_deploy_gh_release "pixelfed" "pixelfed/pixelfed" "tarball" "latest" "/opt/pixelfed"
+    CLEAN_INSTALL=1 fetch_and_deploy_gh_release "pixelfed" "pixelfed/pixelfed" "tarball" "latest" "/opt/pixelfed"
 
     msg_info "Restoring Configuration"
-    cp /tmp/pixelfed.env.bak /opt/pixelfed/.env
-    rm -f /tmp/pixelfed.env.bak
+    cp /opt/pixelfed.env.bak /opt/pixelfed/.env
+    cp -r /opt/pixelfed-storage.bak /opt/pixelfed/storage
+    rm -f /opt/pixelfed.env.bak
+    rm -rf /opt/pixelfed-storage.bak
     msg_ok "Configuration restored"
 
     msg_info "Updating Pixelfed"
@@ -51,6 +55,7 @@ function update_script() {
     chmod -R 775 /opt/pixelfed/storage /opt/pixelfed/bootstrap/cache
     export COMPOSER_ALLOW_SUPERUSER=1
     $STD composer install --no-dev --no-ansi --no-interaction --optimize-autoloader
+    $STD sudo -u pixelfed php artisan storage:link
     $STD sudo -u pixelfed php artisan migrate --force
     $STD sudo -u pixelfed php artisan route:cache
     $STD sudo -u pixelfed php artisan view:cache
@@ -76,5 +81,3 @@ echo -e "${INFO}${YW} Access it using the following URL:${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}http://${IP}${CL}"
 echo -e "${INFO}${YW} Create an admin account with:${CL}"
 echo -e "${TAB}cd /opt/pixelfed && sudo -u pixelfed php artisan user:create"
-echo -e "${INFO}${YW} Credentials saved in:${CL}"
-echo -e "${TAB}/root/pixelfed.creds"

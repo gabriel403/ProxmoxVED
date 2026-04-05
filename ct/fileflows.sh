@@ -21,7 +21,7 @@ color
 catch_errors
 
 function update_script() {
-header_info
+  header_info
   check_container_storage
   check_container_resources
 
@@ -29,26 +29,23 @@ header_info
     msg_error "No ${APP} Installation Found!"
     exit
   fi
-  if ! [[ $(dpkg -s jq 2>/dev/null) ]]; then
-    $STD apt-get update
-    $STD apt-get install -y jq
-  fi
 
   update_available=$(curl -fsSL -X 'GET' "http://localhost:19200/api/status/update-available" -H 'accept: application/json' | jq .UpdateAvailable)
   if [[ "${update_available}" == "true" ]]; then
     msg_info "Stopping Service"
-    systemctl stop fileflows
+    systemctl stop fileflows*
     msg_info "Stopped Service"
 
     msg_info "Creating Backup"
+    ls /opt/*.tar.gz &>/dev/null && rm -f /opt/*.tar.gz
     backup_filename="/opt/${APP}_backup_$(date +%F).tar.gz"
     tar -czf "$backup_filename" -C /opt/fileflows Data
     msg_ok "Backup Created"
 
-    fetch_and_deploy_archive "https://fileflows.com/downloads/zip" "/opt/fileflows"
+    fetch_and_deploy_from_url "https://fileflows.com/downloads/zip" "/opt/fileflows"
 
     msg_info "Starting Service"
-    systemctl start fileflows
+    systemctl start fileflows*
     msg_ok "Started Service"
     msg_ok "Updated successfully!"
   else
