@@ -55,4 +55,4 @@ description
 msg_ok "Completed Successfully!\n"
 echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW} Add this SSH public key to each PVE host's ansible user:${CL}"
-echo -e "${TAB}${BGN}$(pct exec ${CTID} -- cat /root/.ssh/id_ed25519.pub 2>/dev/null)${CL}"
+echo -e "${TAB}${BGN}$(pct exec ${CTID} -- cat /root/.ssh/id_ed25519.pub 2>/dev/null || true)${CL}"
