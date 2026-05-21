@@ -16,7 +16,8 @@ update_os
 msg_info "Installing Ansible"
 $STD apt install -y \
   ansible \
-  git
+  git \
+  openssh-client
 msg_ok "Installed Ansible"
 
 msg_info "Installing community.general Collection"
@@ -26,7 +27,7 @@ msg_ok "Installed community.general Collection"
 msg_info "Generating SSH Keypair"
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
-ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -C "ansible-controller" >/dev/null 2>&1
+ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -C "ansible-controller"
 chmod 600 /root/.ssh/id_ed25519
 msg_ok "Generated SSH Keypair"
 
