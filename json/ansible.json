@@ -1,0 +1,44 @@
+{
+    "name": "Ansible",
+    "slug": "ansible",
+    "categories": [
+        1
+    ],
+    "date_created": "2026-05-21",
+    "type": "ct",
+    "updateable": true,
+    "privileged": false,
+    "interface_port": null,
+    "documentation": "https://docs.ansible.com/",
+    "website": "https://www.ansible.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ansible.webp",
+    "description": "Ansible is an agentless IT automation tool for configuration management, application deployment, and infrastructure orchestration. This LXC provides a dedicated controller node that connects to Proxmox hosts via SSH and manages LXC containers using the community.general proxmox_pct_remote connection plugin.",
+    "install_methods": [
+        {
+            "type": "default",
+            "script": "ct/ansible.sh",
+            "config_path": null,
+            "resources": {
+                "cpu": 1,
+                "ram": 512,
+                "hdd": 4,
+                "os": "Debian",
+                "version": "13"
+            }
+        }
+    ],
+    "default_credentials": {
+        "username": null,
+        "password": null
+    },
+    "notes": [
+        {
+            "text": "The generated SSH public key is displayed at the end of installation. Add it to /home/ansible/.ssh/authorized_keys on each Proxmox host.",
+            "type": "warning"
+        },
+        {
+            "text": "Retrieve the public key at any time with: cat /root/.ssh/id_ed25519.pub",
+            "type": "info"
+        }
+    ]
+}
