@@ -17,7 +17,8 @@ msg_info "Installing Ansible"
 $STD apt install -y \
   ansible \
   git \
-  openssh-client
+  openssh-client \
+  python3-paramiko
 msg_ok "Installed Ansible"
 
 msg_info "Installing community.general Collection"
