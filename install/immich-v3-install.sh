@@ -77,7 +77,7 @@ $STD apt install -y \
 msg_ok "Installed Dependencies"
 
 NODE_VERSION="24" setup_nodejs
-PG_VERSION="16" PG_MODULES="pgvector,contrib" setup_postgresql
+PG_VERSION="16" PG_MODULES="pgvector" setup_postgresql
 setup_uv
 
 if [[ -d /dev/dri ]]; then
