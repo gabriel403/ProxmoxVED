@@ -91,19 +91,11 @@ if [[ -f ~/.openvino ]]; then
 
   # intel-opencl-icd is intentionally NOT installed: its OpenCL ICD breaks
   # onnxruntime's OpenVINO device enumeration (immich-app/immich#23450, #25830).
-  if ! apt-cache policy intel-level-zero-gpu 2>/dev/null | grep -q "Candidate: [0-9]"; then
-    install -d -m 0755 /etc/apt/keyrings
-    curl -fsSL https://repositories.intel.com/gpu/intel-graphics.key -o /etc/apt/keyrings/intel-graphics.asc
-    cat <<EOF >/etc/apt/sources.list.d/intel-gpu.sources
-Types: deb
-URIs: https://repositories.intel.com/gpu/ubuntu
-Suites: noble
-Components: unified
-Signed-By: /etc/apt/keyrings/intel-graphics.asc
-EOF
-    $STD apt update
-  fi
-  $STD apt install -y intel-level-zero-gpu
+  # intel-level-zero-gpu isn't packaged for Trixie, so fetch it (and its
+  # gmmlib dependency) from compute-runtime GitHub releases, same as
+  # setup_hwaccel's Intel Arc/Gen9+ paths do.
+  fetch_and_deploy_gh_release "libigdgmm12" "intel/compute-runtime" "binary" "latest" "" "libigdgmm12_*_amd64.deb" || true
+  fetch_and_deploy_gh_release "intel-level-zero-gpu" "intel/compute-runtime" "binary" "latest" "" "libze-intel-gpu1_*_amd64.deb" || true
   msg_ok "Installed Intel Level Zero GPU drivers"
 fi
 
