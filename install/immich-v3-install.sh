@@ -80,6 +80,12 @@ NODE_VERSION="24" setup_nodejs
 PG_VERSION="16" PG_MODULES="pgvector" setup_postgresql
 setup_uv
 
+msg_info "Setting up pnpm"
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+$STD npm install --global corepack@latest
+$STD corepack enable pnpm
+msg_ok "Set up pnpm"
+
 if [[ -d /dev/dri ]]; then
   read -r -t 60 -p "${TAB3}Enable Intel OpenVINO acceleration for machine learning? [y/N] (auto-no in 60s): " prompt || prompt=""
   [[ "${prompt,,}" =~ ^(y|yes)$ ]] && touch ~/.openvino
@@ -217,25 +223,26 @@ rm -rf "$SOURCE"/build
 msg_ok "Compiled image-processing libraries"
 
 fetch_and_deploy_gh_release "immich-v3" "immich-app/immich" "tarball" "$IMMICH_TAG" "$SRC_DIR"
-mkdir -p "$APP_DIR" "$UPLOAD_DIR" "$GEO_DIR" "$ML_DIR" "${INSTALL_DIR}/cache"
+# $APP_DIR is created by pnpm deploy below; $ML_DIR is created by uv venv inside it
+mkdir -p "$UPLOAD_DIR" "$GEO_DIR" "${INSTALL_DIR}/cache" "${INSTALL_DIR}/www"
 
-msg_info "Building Immich Server and Web"
-cd "$SRC_DIR"/server
-$STD npm install -g node-gyp node-pre-gyp
-$STD npm ci
-$STD npm run build
-$STD npm prune --omit=dev --omit=optional
-cd "$SRC_DIR"/open-api/typescript-sdk
-$STD npm ci
-$STD npm run build
-cd "$SRC_DIR"/web
-$STD npm ci
-$STD npm run build
+msg_info "Building Immich Server (this takes a while)"
 cd "$SRC_DIR"
-cp -a server/{node_modules,dist,bin,resources,package.json,package-lock.json,start*.sh} "$APP_DIR"/
-cp -a web/build "$APP_DIR"/www
+export CI=1
+# Compile SDK, plugin-SDK, and server TypeScript sources
+SHARP_IGNORE_GLOBAL_LIBVIPS=true $STD pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter immich build
+# Deploy pruned server to $APP_DIR; compiles sharp against our system libvips
+SHARP_FORCE_GLOBAL_LIBVIPS=true $STD pnpm --filter immich --prod --no-optional deploy "$APP_DIR"
+chmod +x "$APP_DIR"/bin/*.sh
 cp LICENSE "$APP_DIR"
-msg_ok "Built Immich Server and Web"
+msg_ok "Built Immich Server"
+
+msg_info "Building Immich Web"
+cd "$SRC_DIR"
+SHARP_IGNORE_GLOBAL_LIBVIPS=true $STD pnpm --filter @immich/sdk --filter immich-web install --frozen-lockfile --force
+$STD pnpm --filter @immich/sdk --filter immich-web build
+cp -r "$SRC_DIR"/web/build "${INSTALL_DIR}/www"
+msg_ok "Built Immich Web"
 
 msg_info "Setting up Machine Learning"
 $STD uv venv --python 3.12 "$ML_DIR"/ml-venv
@@ -256,7 +263,6 @@ if [[ -f ~/.openvino ]]; then
     [[ -f "$so" ]] && patchelf --clear-execstack "$so"
   done
 fi
-ln -sf "$APP_DIR"/resources "$INSTALL_DIR"
 msg_ok "Set up Machine Learning"
 
 if [[ -f ~/.openvino ]]; then
@@ -310,19 +316,17 @@ PYEOF
   msg_ok "Patched OpenVINO execution provider"
 fi
 
-cd "$APP_DIR"
-grep -RlZ /usr/src . | xargs -0 -r sed -i "s|/usr/src|$INSTALL_DIR|g"
-grep -RlZE "'/build'" . | xargs -0 -r sed -i "s|'/build'|'$APP_DIR'|g"
 sed -i "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" "$ML_DIR"/immich_ml/config.py
 ln -s "$UPLOAD_DIR" "$APP_DIR"/upload
 ln -s "$UPLOAD_DIR" "$ML_DIR"/upload
-ln -s "$GEO_DIR" "$APP_DIR"
 
-msg_info "Installing Immich CLI"
-$STD npm install --build-from-source sharp
-rm -rf "$APP_DIR"/node_modules/@img/sharp-{libvips*,linuxmusl-x64}
-$STD npm install -g @immich/cli
-msg_ok "Installed Immich CLI"
+msg_info "Building Immich CLI"
+cd "$SRC_DIR"
+$STD pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile
+$STD pnpm --filter @immich/sdk --filter @immich/cli build
+$STD pnpm --filter @immich/cli --prod --no-optional deploy "${INSTALL_DIR}/cli"
+ln -sf "${INSTALL_DIR}/cli/bin/immich" "$APP_DIR/bin/immich"
+msg_ok "Built Immich CLI"
 
 msg_info "Downloading GeoNames data"
 cd "$GEO_DIR"
@@ -355,6 +359,7 @@ MACHINE_LEARNING_CACHE_FOLDER=${INSTALL_DIR}/cache
 
 IMMICH_MEDIA_LOCATION=${UPLOAD_DIR}
 IMMICH_PORT=2283
+IMMICH_BUILD_DATA=${INSTALL_DIR}
 EOF
 if [[ -f ~/.openvino ]]; then
   echo "MACHINE_LEARNING_DEVICE_ID=0" >>"${INSTALL_DIR}"/.env
@@ -400,7 +405,8 @@ Requires=redis-server.service postgresql.service immich-v3-ml.service
 Type=simple
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=/usr/bin/node ${APP_DIR}/dist/main
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${APP_DIR}/bin
+ExecStart=${APP_DIR}/bin/start.sh
 Restart=on-failure
 
 [Install]

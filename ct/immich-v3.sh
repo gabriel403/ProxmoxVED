@@ -167,25 +167,25 @@ function update_script() {
     msg_ok "Stopped Services"
 
     CLEAN_INSTALL=1 fetch_and_deploy_gh_release "immich-v3" "immich-app/immich" "tarball" "$IMMICH_TAG" "$SRC_DIR"
+    mkdir -p "${INSTALL_DIR}/www"
 
-    msg_info "Rebuilding Immich Server and Web"
-    cd "$SRC_DIR"/server
-    $STD npm install -g node-gyp node-pre-gyp
-    $STD npm ci
-    $STD npm run build
-    $STD npm prune --omit=dev --omit=optional
-    cd "$SRC_DIR"/open-api/typescript-sdk
-    $STD npm ci
-    $STD npm run build
-    cd "$SRC_DIR"/web
-    $STD npm ci
-    $STD npm run build
+    msg_info "Rebuilding Immich Server"
     cd "$SRC_DIR"
-    rm -rf "${APP_DIR:?}"/{node_modules,dist,bin,resources,www,LICENSE}
-    cp -a server/{node_modules,dist,bin,resources,package.json,package-lock.json,start*.sh} "$APP_DIR"/
-    cp -a web/build "$APP_DIR"/www
+    export CI=1 COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+    rm -rf "$APP_DIR"/{bin,dist,helmet.json,node_modules,LICENSE}
+    SHARP_IGNORE_GLOBAL_LIBVIPS=true $STD pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter immich build
+    SHARP_FORCE_GLOBAL_LIBVIPS=true $STD pnpm --filter immich --prod --no-optional deploy "$APP_DIR"
+    chmod +x "$APP_DIR"/bin/*.sh
     cp LICENSE "$APP_DIR"
-    msg_ok "Rebuilt Immich Server and Web"
+    msg_ok "Rebuilt Immich Server"
+
+    msg_info "Rebuilding Immich Web"
+    cd "$SRC_DIR"
+    SHARP_IGNORE_GLOBAL_LIBVIPS=true $STD pnpm --filter @immich/sdk --filter immich-web install --frozen-lockfile --force
+    $STD pnpm --filter @immich/sdk --filter immich-web build
+    rm -rf "${INSTALL_DIR}/www"
+    cp -r "$SRC_DIR"/web/build "${INSTALL_DIR}/www"
+    msg_ok "Rebuilt Immich Web"
 
     msg_info "Rebuilding Machine Learning"
     rm -rf "$ML_DIR"/ml-venv
@@ -255,22 +255,20 @@ with open(path, "w") as f:
 print("changed: patched OpenVINOExecutionProvider block")
 PYEOF
     fi
-    ln -sf "$APP_DIR"/resources "$INSTALL_DIR"
     msg_ok "Rebuilt Machine Learning"
 
-    cd "$APP_DIR"
-    grep -RlZ /usr/src . | xargs -0 -r sed -i "s|/usr/src|$INSTALL_DIR|g"
-    grep -RlZE "'/build'" . | xargs -0 -r sed -i "s|'/build'|'$APP_DIR'|g"
     sed -i "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" "$ML_DIR"/immich_ml/config.py
     ln -sf "$UPLOAD_DIR" "$APP_DIR"/upload
     ln -sf "$UPLOAD_DIR" "$ML_DIR"/upload
-    ln -sf "$GEO_DIR" "$APP_DIR"
 
-    msg_info "Updating Immich CLI"
-    $STD npm install --build-from-source sharp
-    rm -rf "$APP_DIR"/node_modules/@img/sharp-{libvips*,linuxmusl-x64}
-    $STD npm install -g @immich/cli
-    msg_ok "Updated Immich CLI"
+    msg_info "Rebuilding Immich CLI"
+    cd "$SRC_DIR"
+    $STD pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile
+    $STD pnpm --filter @immich/sdk --filter @immich/cli build
+    rm -rf "${INSTALL_DIR}/cli"
+    $STD pnpm --filter @immich/cli --prod --no-optional deploy "${INSTALL_DIR}/cli"
+    ln -sf "${INSTALL_DIR}/cli/bin/immich" "$APP_DIR/bin/immich"
+    msg_ok "Rebuilt Immich CLI"
 
     msg_info "Starting Services"
     systemctl start immich-v3-ml immich-v3
