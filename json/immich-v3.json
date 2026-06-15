@@ -1,0 +1,49 @@
+{
+  "name": "Immich-v3",
+  "slug": "immich-v3",
+  "categories": [
+    13
+  ],
+  "date_created": "2026-06-15",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "has_arm": false,
+  "interface_port": 2283,
+  "documentation": "https://immich.app/docs",
+  "website": "https://immich.app",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/immich.webp",
+  "description": "Immich is a self-hosted backup solution for photos and videos. This installs the v3.0.0-rc.0 pre-release as a separate bare-metal instance alongside an existing v2 install, so the two can run side by side against the same media library.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/immich-v3.sh",
+      "config_path": "/opt/immich-v3/.env",
+      "resources": {
+        "cpu": 4,
+        "ram": 4096,
+        "hdd": 20,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "This installs Immich v3.0.0-rc.0, a pre-release. Expect breaking changes before the final v3.0.0 release, and do not rely on this instance as your primary photo library.",
+      "type": "warning"
+    },
+    {
+      "text": "Runs alongside a separate v2 Immich instance using its own database, Redis and upload directory. To share an existing photo library read-only, mount it into this container and add it as an External Library from the Immich admin UI.",
+      "type": "info"
+    },
+    {
+      "text": "Enable Intel OpenVINO acceleration only if GPU passthrough is configured for this container. The installer applies a patch to machine-learning/immich_ml/sessions/ort.py to avoid an onnxruntime 1.24.1 OpenVINO device-enumeration segfault (immich-app/immich#23450, #25830).",
+      "type": "info"
+    }
+  ]
+}
