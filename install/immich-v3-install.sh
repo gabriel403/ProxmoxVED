@@ -99,7 +99,7 @@ if [[ -f ~/.openvino ]]; then
   msg_ok "Installed Intel Level Zero GPU drivers"
 fi
 
-PG_DB_NAME="immich" PG_DB_USER="immich" PG_DB_EXTENSIONS="pgvector,cube,earthdistance" PG_DB_GRANT_SUPERUSER="true" setup_postgresql_db
+PG_DB_NAME="immich" PG_DB_USER="immich" PG_DB_EXTENSIONS="vector,cube,earthdistance" PG_DB_GRANT_SUPERUSER="true" setup_postgresql_db
 
 msg_info "Compiling image-processing libraries (this takes a while)"
 STAGING_DIR=/opt/staging
