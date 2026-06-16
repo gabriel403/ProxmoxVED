@@ -224,7 +224,8 @@ msg_ok "Compiled image-processing libraries"
 
 fetch_and_deploy_gh_release "immich-v3" "immich-app/immich" "tarball" "$IMMICH_TAG" "$SRC_DIR"
 # $APP_DIR is created by pnpm deploy below; $ML_DIR is created by uv venv inside it
-mkdir -p "$UPLOAD_DIR" "$GEO_DIR" "${INSTALL_DIR}/cache" "${INSTALL_DIR}/www"
+# www is created by cp -r below (must not pre-exist or cp nests the build/ dir inside it)
+mkdir -p "$UPLOAD_DIR" "$GEO_DIR" "${INSTALL_DIR}/cache"
 
 msg_info "Building Immich Server (this takes a while)"
 cd "$SRC_DIR"

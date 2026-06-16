@@ -167,7 +167,6 @@ function update_script() {
     msg_ok "Stopped Services"
 
     CLEAN_INSTALL=1 fetch_and_deploy_gh_release "immich-v3" "immich-app/immich" "tarball" "$IMMICH_TAG" "$SRC_DIR"
-    mkdir -p "${INSTALL_DIR}/www"
 
     msg_info "Rebuilding Immich Server"
     cd "$SRC_DIR"
