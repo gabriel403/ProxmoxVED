@@ -42,7 +42,7 @@
       "type": "info"
     },
     {
-      "text": "Enable Intel OpenVINO acceleration only if GPU passthrough is configured for this container. The installer applies a patch to machine-learning/immich_ml/sessions/ort.py to avoid an onnxruntime 1.24.1 OpenVINO device-enumeration segfault (immich-app/immich#23450, #25830).",
+      "text": "Enable Intel OpenVINO acceleration only if GPU passthrough is configured for this container.",
       "type": "info"
     }
   ]

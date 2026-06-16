@@ -203,56 +203,6 @@ function update_script() {
     cp -a machine-learning/{ann,immich_ml} "$ML_DIR"
     if [[ -f ~/.openvino ]]; then
       sed -i "/intra_op/s/int = 0/int = os.cpu_count() or 0/" "$ML_DIR"/immich_ml/config.py
-      for so in "$ML_DIR"/ml-venv/lib/python3.*/site-packages/onnxruntime/capi/onnxruntime_pybind11_state*.so; do
-        [[ -f "$so" ]] && patchelf --clear-execstack "$so"
-      done
-
-      python3 - "$ML_DIR/immich_ml/sessions/ort.py" <<'PYEOF'
-import sys
-
-OLD_MARKER = "ort.capi._pybind_state.get_available_openvino_device_ids()"
-NEW_MARKER = "enumeration bypassed"
-END_MARKER = 'log.debug("OpenVINO: No GPU found, using CPU")'
-
-NEW_BLOCK = [
-    "# Patched: skip get_available_openvino_device_ids() which segfaults\n",
-    "# on onnxruntime 1.24.1 + OpenVINO inside containers.\n",
-    "# GPU verified working via Level Zero, so target it directly.\n",
-    'device_type = f"GPU.{settings.device_id}"\n',
-    'log.debug(f"OpenVINO: Using GPU device {device_type} (enumeration bypassed)")\n',
-]
-
-path = sys.argv[1]
-with open(path) as f:
-    content = f.read()
-
-if NEW_MARKER in content:
-    print("unchanged: already patched")
-    sys.exit(0)
-
-if OLD_MARKER not in content:
-    sys.exit(
-        "FAIL: expected OpenVINOExecutionProvider device enumeration "
-        f"({OLD_MARKER}) not found, and patch is not already applied. "
-        "Upstream ort.py has likely changed - review install/immich-v3-install.sh"
-    )
-
-lines = content.splitlines(keepends=True)
-start_idx = next(i for i, line in enumerate(lines) if OLD_MARKER in line)
-indent = lines[start_idx][: len(lines[start_idx]) - len(lines[start_idx].lstrip())]
-
-try:
-    end_idx = next(i for i in range(start_idx, len(lines)) if END_MARKER in lines[i])
-except StopIteration:
-    sys.exit(f"FAIL: found start of OpenVINO block but not end marker ({END_MARKER!r})")
-
-new_lines = lines[:start_idx] + [indent + line for line in NEW_BLOCK] + lines[end_idx + 1:]
-
-with open(path, "w") as f:
-    f.writelines(new_lines)
-
-print("changed: patched OpenVINOExecutionProvider block")
-PYEOF
     fi
     msg_ok "Rebuilt Machine Learning"
 

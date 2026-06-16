@@ -91,20 +91,6 @@ if [[ -d /dev/dri ]]; then
   [[ "${prompt,,}" =~ ^(y|yes)$ ]] && touch ~/.openvino
 fi
 
-if [[ -f ~/.openvino ]]; then
-  msg_info "Installing Intel Level Zero GPU drivers"
-  $STD apt install -y level-zero patchelf
-
-  # intel-opencl-icd is intentionally NOT installed: its OpenCL ICD breaks
-  # onnxruntime's OpenVINO device enumeration (immich-app/immich#23450, #25830).
-  # intel-level-zero-gpu isn't packaged for Trixie, so fetch it (and its
-  # gmmlib dependency) from compute-runtime GitHub releases, same as
-  # setup_hwaccel's Intel Arc/Gen9+ paths do.
-  fetch_and_deploy_gh_release "libigdgmm12" "intel/compute-runtime" "binary" "latest" "" "libigdgmm12_*_amd64.deb" || true
-  fetch_and_deploy_gh_release "intel-level-zero-gpu" "intel/compute-runtime" "binary" "latest" "" "libze-intel-gpu1_*_amd64.deb" || true
-  msg_ok "Installed Intel Level Zero GPU drivers"
-fi
-
 PG_DB_NAME="immich" PG_DB_USER="immich" PG_DB_EXTENSIONS="vector,cube,earthdistance" PG_DB_GRANT_SUPERUSER="true" setup_postgresql_db
 
 msg_info "Compiling image-processing libraries (this takes a while)"
@@ -260,62 +246,8 @@ cd "$SRC_DIR"
 cp -a machine-learning/{ann,immich_ml} "$ML_DIR"
 if [[ -f ~/.openvino ]]; then
   sed -i "/intra_op/s/int = 0/int = os.cpu_count() or 0/" "$ML_DIR"/immich_ml/config.py
-  for so in "$ML_DIR"/ml-venv/lib/python3.*/site-packages/onnxruntime/capi/onnxruntime_pybind11_state*.so; do
-    [[ -f "$so" ]] && patchelf --clear-execstack "$so"
-  done
 fi
 msg_ok "Set up Machine Learning"
-
-if [[ -f ~/.openvino ]]; then
-  msg_info "Patching OpenVINO execution provider"
-  python3 - "$ML_DIR/immich_ml/sessions/ort.py" <<'PYEOF'
-import sys
-
-OLD_MARKER = "ort.capi._pybind_state.get_available_openvino_device_ids()"
-NEW_MARKER = "enumeration bypassed"
-END_MARKER = 'log.debug("OpenVINO: No GPU found, using CPU")'
-
-NEW_BLOCK = [
-    "# Patched: skip get_available_openvino_device_ids() which segfaults\n",
-    "# on onnxruntime 1.24.1 + OpenVINO inside containers.\n",
-    "# GPU verified working via Level Zero, so target it directly.\n",
-    'device_type = f"GPU.{settings.device_id}"\n',
-    'log.debug(f"OpenVINO: Using GPU device {device_type} (enumeration bypassed)")\n',
-]
-
-path = sys.argv[1]
-with open(path) as f:
-    content = f.read()
-
-if NEW_MARKER in content:
-    print("unchanged: already patched")
-    sys.exit(0)
-
-if OLD_MARKER not in content:
-    sys.exit(
-        "FAIL: expected OpenVINOExecutionProvider device enumeration "
-        f"({OLD_MARKER}) not found, and patch is not already applied. "
-        "Upstream ort.py has likely changed - review install/immich-v3-install.sh"
-    )
-
-lines = content.splitlines(keepends=True)
-start_idx = next(i for i, line in enumerate(lines) if OLD_MARKER in line)
-indent = lines[start_idx][: len(lines[start_idx]) - len(lines[start_idx].lstrip())]
-
-try:
-    end_idx = next(i for i in range(start_idx, len(lines)) if END_MARKER in lines[i])
-except StopIteration:
-    sys.exit(f"FAIL: found start of OpenVINO block but not end marker ({END_MARKER!r})")
-
-new_lines = lines[:start_idx] + [indent + line for line in NEW_BLOCK] + lines[end_idx + 1:]
-
-with open(path, "w") as f:
-    f.writelines(new_lines)
-
-print("changed: patched OpenVINOExecutionProvider block")
-PYEOF
-  msg_ok "Patched OpenVINO execution provider"
-fi
 
 sed -i "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" "$ML_DIR"/immich_ml/config.py
 ln -s "$UPLOAD_DIR" "$APP_DIR"/upload
