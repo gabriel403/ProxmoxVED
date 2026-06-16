@@ -374,6 +374,8 @@ cd ${ML_DIR}
 set -a
 . ${INSTALL_DIR}/.env
 set +a
+# IMMICH_PORT controls the server port (2283); ML service uses its own default (3003)
+unset IMMICH_PORT
 
 python -m immich_ml
 EOF
