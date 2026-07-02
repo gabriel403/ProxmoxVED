@@ -20,7 +20,7 @@ cat <<'EOF' >/opt/nebula-sync/.env
 # ---------------------------------------------------------------------------
 # Nebula-Sync configuration
 # All settings can be managed here or overwritten by Ansible / config mgmt.
-# Restart the timer after any change: systemctl restart nebula-sync.timer
+# Restart the service after any change: systemctl restart nebula-sync
 # ---------------------------------------------------------------------------
 
 # Required: primary Pi-hole URL and password (format: http://host|password)
@@ -36,7 +36,12 @@ FULL_SYNC=true
 # Run gravity update on replicas after sync (default: false)
 RUN_GRAVITY=false
 
-# Timezone for log timestamps
+# Cron schedule controlling sync frequency (cron format). Required for the
+# service to keep running and sync on a schedule; without it, the binary
+# syncs once and exits.
+CRON=0 * * * *
+
+# Timezone for logs and cron evaluation
 TZ=UTC
 
 # ---------------------------------------------------------------------------
@@ -98,27 +103,20 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 User=root
 EnvironmentFile=/opt/nebula-sync/.env
 ExecStart=/opt/nebula-sync/nebula-sync run
+Restart=on-failure
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
-EOF
-
-cat <<'EOF' >/etc/systemd/system/nebula-sync.timer
-[Unit]
-Description=Nebula-Sync Pi-hole Configuration Sync Timer
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
 
 [Install]
-WantedBy=timers.target
+WantedBy=multi-user.target
 EOF
 
-systemctl enable -q --now nebula-sync.timer
+systemctl enable -q --now nebula-sync
 msg_ok "Created Service"
 
 motd_ssh

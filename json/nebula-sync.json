@@ -34,11 +34,11 @@
   },
   "notes": [
     {
-      "text": "Edit /opt/nebula-sync/.env with your Pi-hole URLs and passwords, then run: systemctl restart nebula-sync.timer",
+      "text": "Edit /opt/nebula-sync/.env with your Pi-hole URLs and passwords, then run: systemctl restart nebula-sync",
       "type": "info"
     },
     {
-      "text": "Sync runs hourly by default. Change the schedule in /etc/systemd/system/nebula-sync.timer.",
+      "text": "Sync runs hourly by default via the CRON variable in .env. Edit CRON and restart the service to change the schedule.",
       "type": "info"
     }
   ]

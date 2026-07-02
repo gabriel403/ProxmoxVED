@@ -32,7 +32,7 @@ function update_script() {
 
   if check_for_gh_release "nebula-sync" "lovelaze/nebula-sync"; then
     msg_info "Stopping Service"
-    systemctl stop nebula-sync.timer nebula-sync.service
+    systemctl stop nebula-sync
     msg_ok "Stopped Service"
 
     create_backup /opt/nebula-sync/.env
@@ -42,7 +42,7 @@ function update_script() {
     restore_backup
 
     msg_info "Starting Service"
-    systemctl start nebula-sync.timer
+    systemctl start nebula-sync
     msg_ok "Started Service"
     msg_ok "Updated successfully!"
   fi
@@ -57,5 +57,5 @@ msg_ok "Completed Successfully!\n"
 echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW} Configure your Pi-hole credentials in:${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}/opt/nebula-sync/.env${CL}"
-echo -e "${INFO}${YW} Then restart the timer:${CL}"
-echo -e "${TAB}${GATEWAY}${BGN}systemctl restart nebula-sync.timer${CL}"
+echo -e "${INFO}${YW} Then restart the service:${CL}"
+echo -e "${TAB}${GATEWAY}${BGN}systemctl restart nebula-sync${CL}"
