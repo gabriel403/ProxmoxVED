@@ -1,0 +1,45 @@
+{
+  "name": "Nebula-Sync",
+  "slug": "nebula-sync",
+  "categories": [
+    5
+  ],
+  "date_created": "2026-07-02",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "has_arm": false,
+  "interface_port": null,
+  "documentation": "https://github.com/lovelaze/nebula-sync?tab=readme-ov-file#readme",
+  "website": "https://github.com/lovelaze/nebula-sync",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/nebula-sync.webp",
+  "description": "Nebula-Sync synchronizes configuration between multiple Pi-hole v6.x instances, supporting full Teleporter sync or granular per-section control over DNS, DHCP, gravity lists, and more.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/nebula-sync.sh",
+      "config_path": "/opt/nebula-sync/.env",
+      "resources": {
+        "cpu": 1,
+        "ram": 128,
+        "hdd": 2,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "Edit /opt/nebula-sync/.env with your Pi-hole URLs and passwords, then run: systemctl restart nebula-sync.timer",
+      "type": "info"
+    },
+    {
+      "text": "Sync runs hourly by default. Change the schedule in /etc/systemd/system/nebula-sync.timer.",
+      "type": "info"
+    }
+  ]
+}
