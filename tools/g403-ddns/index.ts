@@ -243,6 +243,8 @@ const omada = {
 
   async wanIp(): Promise<IpResult> {
     try {
+      // Paths below embed omadacId, so discovery must run before they are built.
+      await this.ensureToken();
       await this.ensureSite();
       await this.ensureGateway();
       return await this.readWan();
