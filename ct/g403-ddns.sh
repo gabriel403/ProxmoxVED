@@ -4,7 +4,7 @@ source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Gabriel Baker (gbaker403)
 # License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
-# Source: https://git-core-1.internal.g403.co/gabriel/g403-ddns
+# Source: https://github.com/gabriel403/ProxmoxVED/tree/add-g403-ddns/tools/g403-ddns
 
 APP="g403-ddns"
 var_tags="${var_tags:-network;ddns}"
@@ -16,7 +16,7 @@ var_version="${var_version:-13}"
 var_unprivileged="${var_unprivileged:-1}"
 
 # Application settings - prompted for inside the container when unset.
-export var_repo_url="${var_repo_url:-https://git-core-1.internal.g403.co/gabriel/g403-ddns.git}"
+export var_source_url="${var_source_url:-https://raw.githubusercontent.com/gabriel403/ProxmoxVED/add-g403-ddns/tools/g403-ddns/index.ts}"
 export var_ip_source="${var_ip_source:-}"
 export var_omada_url="${var_omada_url:-}"
 export var_omada_client_id="${var_omada_client_id:-}"
@@ -54,25 +54,27 @@ function update_script() {
   check_container_storage
   check_container_resources
 
-  if [[ ! -d /opt/g403-ddns/.git ]]; then
+  if [[ ! -f /opt/g403-ddns/index.ts ]]; then
     msg_error "No ${APP} Installation Found!"
     exit
   fi
 
-  cd /opt/g403-ddns
-  $STD git fetch -q origin
-  if [[ "$(git rev-parse HEAD)" == "$(git rev-parse '@{u}')" ]]; then
-    msg_ok "No update required. ${APP} is already at $(git rev-parse --short HEAD)."
+  msg_info "Checking for Update"
+  curl -fsSL "${var_source_url}" -o /opt/g403-ddns/index.ts.new
+  if cmp -s /opt/g403-ddns/index.ts /opt/g403-ddns/index.ts.new; then
+    rm -f /opt/g403-ddns/index.ts.new
+    msg_ok "No update required. ${APP} is already at $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)."
     exit
   fi
+  msg_ok "Found Update"
 
   msg_info "Stopping Service"
   systemctl stop g403-ddns
   msg_ok "Stopped Service"
 
   msg_info "Updating ${APP}"
-  $STD git reset -q --hard '@{u}'
-  msg_ok "Updated ${APP} to $(git rev-parse --short HEAD)"
+  mv /opt/g403-ddns/index.ts.new /opt/g403-ddns/index.ts
+  msg_ok "Updated ${APP} to $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)"
 
   msg_info "Starting Service"
   systemctl start g403-ddns

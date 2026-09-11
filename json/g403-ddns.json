@@ -9,9 +9,9 @@
   "updateable": true,
   "privileged": false,
   "interface_port": 8080,
-  "documentation": "https://git-core-1.internal.g403.co/gabriel/g403-ddns#readme",
-  "website": "https://git-core-1.internal.g403.co/gabriel/g403-ddns",
-  "repository": "https://git-core-1.internal.g403.co/gabriel/g403-ddns",
+  "documentation": "https://github.com/gabriel403/ProxmoxVED/blob/add-g403-ddns/tools/g403-ddns/README.md",
+  "website": "https://github.com/gabriel403/ProxmoxVED/tree/add-g403-ddns/tools/g403-ddns",
+  "repository": "https://github.com/gabriel403/ProxmoxVED",
   "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/cloudflare.webp",
   "description": "Tiny dependency-free TypeScript service (Node 24, no build step) that reads the gateway's WAN IP from the TP-Link Omada controller's Open API (or a public echo service) and keeps one Cloudflare A record pointed at it. Replaces the gateway's built-in custom DDNS, which can only reach targets on the WAN side.",
   "install_methods": [
@@ -33,16 +33,67 @@
     "password": null
   },
   "app_vars": [
-    { "name": "var_ip_source", "label": "IP source", "type": "select", "options": ["omada", "public"], "default": "omada" },
-    { "name": "var_omada_url", "label": "Omada controller URL", "type": "text" },
-    { "name": "var_omada_client_id", "label": "Omada Open API client ID", "type": "text" },
-    { "name": "var_omada_client_secret", "label": "Omada Open API client secret", "type": "password", "secret": true },
-    { "name": "var_omada_site", "label": "Omada site name (empty = only site)", "type": "text" },
-    { "name": "var_cf_api_token", "label": "Cloudflare API token (Edit zone DNS)", "type": "password", "secret": true, "required": true },
-    { "name": "var_cf_record", "label": "DNS record to update", "type": "text", "required": true },
-    { "name": "var_cf_zone", "label": "Cloudflare zone (empty = derive from record)", "type": "text" },
-    { "name": "var_interval", "label": "Check interval (seconds)", "type": "number", "default": 60 },
-    { "name": "var_repo_url", "label": "Git URL of the g403-ddns source", "type": "text", "default": "https://git-core-1.internal.g403.co/gabriel/g403-ddns.git" }
+    {
+      "name": "var_ip_source",
+      "label": "IP source",
+      "type": "select",
+      "options": [
+        "omada",
+        "public"
+      ],
+      "default": "omada"
+    },
+    {
+      "name": "var_omada_url",
+      "label": "Omada controller URL",
+      "type": "text"
+    },
+    {
+      "name": "var_omada_client_id",
+      "label": "Omada Open API client ID",
+      "type": "text"
+    },
+    {
+      "name": "var_omada_client_secret",
+      "label": "Omada Open API client secret",
+      "type": "password",
+      "secret": true
+    },
+    {
+      "name": "var_omada_site",
+      "label": "Omada site name (empty = only site)",
+      "type": "text"
+    },
+    {
+      "name": "var_cf_api_token",
+      "label": "Cloudflare API token (Edit zone DNS)",
+      "type": "password",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "var_cf_record",
+      "label": "DNS record to update",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "var_cf_zone",
+      "label": "Cloudflare zone (empty = derive from record)",
+      "type": "text"
+    },
+    {
+      "name": "var_interval",
+      "label": "Check interval (seconds)",
+      "type": "number",
+      "default": 60
+    },
+    {
+      "name": "var_source_url",
+      "label": "Raw URL of index.ts to install",
+      "type": "text",
+      "default": "https://raw.githubusercontent.com/gabriel403/ProxmoxVED/add-g403-ddns/tools/g403-ddns/index.ts"
+    }
   ],
   "notes": [
     {
@@ -54,7 +105,7 @@
       "type": "warning"
     },
     {
-      "text": "The install clones the source over HTTPS, so the Forgejo repository must be readable anonymously (public) or var_repo_url must embed a token.",
+      "text": "The app is a single TypeScript file kept in tools/g403-ddns of this branch; install and update fetch it from the branch's raw URL (var_source_url).",
       "type": "info"
     }
   ]
