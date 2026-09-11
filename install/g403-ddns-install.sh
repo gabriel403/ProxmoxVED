@@ -3,7 +3,7 @@
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Gabriel Baker (gbaker403)
 # License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
-# Source: https://git-core-1.internal.g403.co/gabriel/g403-ddns
+# Source: https://github.com/gabriel403/ProxmoxVED/tree/add-g403-ddns/tools/g403-ddns
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -13,15 +13,15 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Dependencies"
-$STD apt install -y git
-msg_ok "Installed Dependencies"
-
 NODE_VERSION="24" setup_nodejs
 
 msg_info "Fetching g403-ddns"
-$STD git clone -q "${var_repo_url:-https://git-core-1.internal.g403.co/gabriel/g403-ddns.git}" /opt/g403-ddns
-msg_ok "Fetched g403-ddns $(git -C /opt/g403-ddns rev-parse --short HEAD)"
+mkdir -p /opt/g403-ddns
+curl -fsSL "${var_source_url:-https://raw.githubusercontent.com/gabriel403/ProxmoxVED/add-g403-ddns/tools/g403-ddns/index.ts}" -o /opt/g403-ddns/index.ts
+cat <<PKG >/opt/g403-ddns/package.json
+{ "name": "g403-ddns", "private": true, "type": "module" }
+PKG
+msg_ok "Fetched g403-ddns $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)"
 
 # ---------------------------------------------------------------------------
 # Gather configuration. Every prompt is skipped when the matching var_* is
@@ -132,7 +132,7 @@ chmod 600 /opt/g403-ddns/.env
 msg_ok "Wrote Configuration to /opt/g403-ddns/.env"
 
 msg_info "Checking Credentials (dry run, changes nothing)"
-if (cd /opt/g403-ddns && HEALTH_PORT=0 node --env-file=.env src/index.ts --once --dry-run); then
+if (cd /opt/g403-ddns && HEALTH_PORT=0 node --env-file=.env index.ts --once --dry-run); then
   msg_ok "Checked Credentials"
 else
   msg_error "Credential check failed - see the lines above. The service is still installed; fix /opt/g403-ddns/.env and 'systemctl restart g403-ddns'."
@@ -149,7 +149,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/g403-ddns
 EnvironmentFile=/opt/g403-ddns/.env
-ExecStart=/usr/bin/node /opt/g403-ddns/src/index.ts
+ExecStart=/usr/bin/node /opt/g403-ddns/index.ts
 Restart=on-failure
 RestartSec=30
 
