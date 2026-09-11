@@ -1,0 +1,61 @@
+{
+  "name": "g403-ddns",
+  "slug": "g403-ddns",
+  "categories": [
+    4
+  ],
+  "date_created": "2026-09-11",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 8080,
+  "documentation": "https://git-core-1.internal.g403.co/gabriel/g403-ddns#readme",
+  "website": "https://git-core-1.internal.g403.co/gabriel/g403-ddns",
+  "repository": "https://git-core-1.internal.g403.co/gabriel/g403-ddns",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/cloudflare.webp",
+  "description": "Tiny dependency-free Node service that reads the gateway's WAN IP from the TP-Link Omada controller's Open API (or a public echo service) and keeps one Cloudflare A record pointed at it. Replaces the gateway's built-in custom DDNS, which can only reach targets on the WAN side.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/g403-ddns.sh",
+      "config_path": "/opt/g403-ddns/.env",
+      "resources": {
+        "cpu": 1,
+        "ram": 256,
+        "hdd": 2,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "app_vars": [
+    { "name": "var_ip_source", "label": "IP source", "type": "select", "options": ["omada", "public"], "default": "omada" },
+    { "name": "var_omada_url", "label": "Omada controller URL", "type": "text" },
+    { "name": "var_omada_client_id", "label": "Omada Open API client ID", "type": "text" },
+    { "name": "var_omada_client_secret", "label": "Omada Open API client secret", "type": "password", "secret": true },
+    { "name": "var_omada_site", "label": "Omada site name (empty = only site)", "type": "text" },
+    { "name": "var_cf_api_token", "label": "Cloudflare API token (Edit zone DNS)", "type": "password", "secret": true, "required": true },
+    { "name": "var_cf_record", "label": "DNS record to update", "type": "text", "required": true },
+    { "name": "var_cf_zone", "label": "Cloudflare zone (empty = derive from record)", "type": "text" },
+    { "name": "var_interval", "label": "Check interval (seconds)", "type": "number", "default": 60 },
+    { "name": "var_repo_url", "label": "Git URL of the g403-ddns source", "type": "text", "default": "https://git-core-1.internal.g403.co/gabriel/g403-ddns.git" }
+  ],
+  "notes": [
+    {
+      "text": "Omada: create the Open API client under Global View > Settings > Platform Integration > Open API (mode Client Credentials, role Viewer). Requires controller 5.9 or newer.",
+      "type": "info"
+    },
+    {
+      "text": "Cloudflare: use an API token from the 'Edit zone DNS' template scoped to the single zone that holds the record. Never use the Global API Key.",
+      "type": "warning"
+    },
+    {
+      "text": "The install clones the source over HTTPS, so the Forgejo repository must be readable anonymously (public) or var_repo_url must embed a token.",
+      "type": "info"
+    }
+  ]
+}
