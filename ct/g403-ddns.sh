@@ -32,6 +32,26 @@ variables
 color
 catch_errors
 
+# The install prompts for credentials it was not given. Prompts read the
+# terminal that lxc-attach inherits from this process, so a piped entry
+# (curl ... | bash) hands them EOF and the build fails after minutes of work.
+# Catch that here, before anything is built.
+_g403_missing=()
+for required in var_cf_api_token var_cf_record; do
+  [[ -z "${!required:-}" ]] && _g403_missing+=("$required")
+done
+if [[ "${var_ip_source:-omada}" == "omada" ]]; then
+  for required in var_omada_url var_omada_client_id var_omada_client_secret; do
+    [[ -z "${!required:-}" ]] && _g403_missing+=("$required")
+  done
+fi
+if [[ ${#_g403_missing[@]} -gt 0 && ! -t 0 && -z "${mode:-}" ]]; then
+  msg_error "stdin is not a terminal, so the install could not prompt for: ${_g403_missing[*]}"
+  msg_error "Run it as: bash <(curl -fsSL <core>/tools/run.sh) <script-base> ct/g403-ddns.sh"
+  msg_error "or pass those as var_* environment variables."
+  exit 1
+fi
+
 if [[ -n "${mode:-}" ]]; then
   for required in var_cf_api_token var_cf_record; do
     if [[ -z "${!required:-}" ]]; then
