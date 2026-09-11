@@ -13,7 +13,7 @@
   "website": "https://git-core-1.internal.g403.co/gabriel/g403-ddns",
   "repository": "https://git-core-1.internal.g403.co/gabriel/g403-ddns",
   "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/cloudflare.webp",
-  "description": "Tiny dependency-free Node service that reads the gateway's WAN IP from the TP-Link Omada controller's Open API (or a public echo service) and keeps one Cloudflare A record pointed at it. Replaces the gateway's built-in custom DDNS, which can only reach targets on the WAN side.",
+  "description": "Tiny dependency-free TypeScript service (Node 24, no build step) that reads the gateway's WAN IP from the TP-Link Omada controller's Open API (or a public echo service) and keeps one Cloudflare A record pointed at it. Replaces the gateway's built-in custom DDNS, which can only reach targets on the WAN side.",
   "install_methods": [
     {
       "type": "default",

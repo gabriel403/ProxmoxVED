@@ -17,7 +17,7 @@ msg_info "Installing Dependencies"
 $STD apt install -y git
 msg_ok "Installed Dependencies"
 
-NODE_VERSION="22" setup_nodejs
+NODE_VERSION="24" setup_nodejs
 
 msg_info "Fetching g403-ddns"
 $STD git clone -q "${var_repo_url:-https://git-core-1.internal.g403.co/gabriel/g403-ddns.git}" /opt/g403-ddns
@@ -132,7 +132,7 @@ chmod 600 /opt/g403-ddns/.env
 msg_ok "Wrote Configuration to /opt/g403-ddns/.env"
 
 msg_info "Checking Credentials (dry run, changes nothing)"
-if (cd /opt/g403-ddns && HEALTH_PORT=0 node --env-file=.env src/index.js --once --dry-run); then
+if (cd /opt/g403-ddns && HEALTH_PORT=0 node --env-file=.env src/index.ts --once --dry-run); then
   msg_ok "Checked Credentials"
 else
   msg_error "Credential check failed - see the lines above. The service is still installed; fix /opt/g403-ddns/.env and 'systemctl restart g403-ddns'."
@@ -149,7 +149,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/g403-ddns
 EnvironmentFile=/opt/g403-ddns/.env
-ExecStart=/usr/bin/node /opt/g403-ddns/src/index.js
+ExecStart=/usr/bin/node /opt/g403-ddns/src/index.ts
 Restart=on-failure
 RestartSec=30
 
