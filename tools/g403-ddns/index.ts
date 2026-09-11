@@ -450,7 +450,13 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.exit(0);
   });
 }
+// A failed cycle (resolver not up yet at boot, controller restarting) is
+// retried with a short backoff instead of waiting out the whole interval.
+let failures = 0;
 while (!stopping) {
-  await cycle();
-  await new Promise((r) => setTimeout(r, cfg.interval * 1000));
+  const ok = await cycle();
+  failures = ok ? 0 : failures + 1;
+  const delay = ok ? cfg.interval : Math.min(cfg.interval, 15 * 2 ** Math.min(failures - 1, 5));
+  if (!ok) log("warn", `retrying in ${delay}s`, { failures });
+  await new Promise((r) => setTimeout(r, delay * 1000));
 }
