@@ -47,8 +47,8 @@ if [[ "${var_ip_source:-omada}" == "omada" ]]; then
 fi
 if [[ ${#_g403_missing[@]} -gt 0 && ! -t 0 && -z "${mode:-}" ]]; then
   msg_error "stdin is not a terminal, so the install could not prompt for: ${_g403_missing[*]}"
-  msg_error "Run it as: bash <(curl -fsSL <core>/tools/run.sh) <script-base> ct/g403-ddns.sh"
-  msg_error "or pass those as var_* environment variables."
+  msg_error "Run it the standard way, bash -c \"\$(curl -fsSL .../ct/g403-ddns.sh)\", not curl | bash,"
+  msg_error "or pass those values as var_* environment variables."
   exit 1
 fi
 
