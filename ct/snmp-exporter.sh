@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/build.func)
-
+_cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
+source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Gabriel Baker (gbaker403)
 # License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
@@ -13,7 +13,7 @@ var_ram="${var_ram:-256}"
 var_disk="${var_disk:-2}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
-var_arm64="${var_arm64:-no}"
+var_arm64="${var_arm64:-no}" # release asset is matched with a linux-amd64 pattern
 var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
@@ -36,15 +36,11 @@ function update_script() {
     systemctl stop snmp_exporter
     msg_ok "Stopped ${APP}"
 
-    msg_info "Backing up snmp.yml"
-    cp /opt/snmp_exporter/snmp.yml /opt/snmp_exporter/snmp.yml.bak
-    msg_ok "Backed up snmp.yml"
+    create_backup /opt/snmp_exporter/snmp.yml
 
     CLEAN_INSTALL=1 fetch_and_deploy_gh_release "snmp_exporter" "prometheus/snmp_exporter" "prebuild" "latest" "/opt/snmp_exporter" "snmp_exporter-*.linux-amd64.tar.gz"
 
-    msg_info "Restoring snmp.yml"
-    mv /opt/snmp_exporter/snmp.yml.bak /opt/snmp_exporter/snmp.yml
-    msg_ok "Restored snmp.yml"
+    restore_backup
 
     msg_info "Starting ${APP}"
     systemctl start snmp_exporter
