@@ -21,7 +21,7 @@
       "config_path": "/opt/g403-ddns/.env",
       "resources": {
         "cpu": 1,
-        "ram": 256,
+        "ram": 512,
         "hdd": 2,
         "os": "Debian",
         "version": "13"

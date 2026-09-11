@@ -9,7 +9,7 @@ source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_
 APP="g403-ddns"
 var_tags="${var_tags:-network;ddns}"
 var_cpu="${var_cpu:-1}"
-var_ram="${var_ram:-256}"
+var_ram="${var_ram:-512}"
 var_disk="${var_disk:-2}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
