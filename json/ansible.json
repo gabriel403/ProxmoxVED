@@ -13,7 +13,7 @@
   "website": "https://www.ansible.com/",
   "repository": "https://github.com/ansible/ansible",
   "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ansible.webp",
-  "description": "Ansible is an agentless IT automation tool for configuration management, application deployment, and infrastructure orchestration. This LXC provides a dedicated controller node that connects to Proxmox hosts via SSH and manages LXC containers using the community.general proxmox_pct_remote connection plugin.",
+  "description": "Ansible is an agentless IT automation tool for configuration management, application deployment, and infrastructure orchestration. It connects over SSH and, with the community.general proxmox_pct_remote connection plugin, can manage LXC containers through their Proxmox host.",
   "install_methods": [
     {
       "type": "default",

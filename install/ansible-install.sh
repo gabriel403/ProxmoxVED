@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Copyright (c) 2021-2026 community-scripts ORG
-# Author: Gabriel Baker (gbaker403)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# Author: Gabriel Baker (gabriel403)
+# License: MIT | https://github.com/community-scripts/DevScripts/raw/main/LICENSE
 # Source: https://github.com/ansible/ansible
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
