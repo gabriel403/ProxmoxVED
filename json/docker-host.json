@@ -1,0 +1,41 @@
+{
+  "name": "Docker-Host",
+  "slug": "docker-host",
+  "categories": [
+    3
+  ],
+  "date_created": "2026-10-22",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": null,
+  "documentation": "https://docs.docker.com/engine/",
+  "website": "https://www.docker.com/",
+  "repository": "https://github.com/moby/moby",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/docker.webp",
+  "description": "Docker Engine runs applications in isolated containers built from images. This is a bare Debian host with Docker Engine and the Compose plugin from Docker's own apt repository, ready for stacks deployed by a configuration management tool.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/docker-host.sh",
+      "config_path": "/etc/docker/daemon.json",
+      "resources": {
+        "cpu": 2,
+        "ram": 2048,
+        "hdd": 8,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "Unattended by design: no prompts, no exposed Docker TCP socket and no Portainer. Deploy stacks with your own tooling.",
+      "type": "info"
+    }
+  ]
+}
