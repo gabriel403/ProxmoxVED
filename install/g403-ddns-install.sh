@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Copyright (c) 2021-2026 community-scripts ORG
-# Author: Gabriel Baker (gbaker403)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# Author: Gabriel Baker (gabriel403)
+# License: MIT | https://github.com/community-scripts/DevScripts/raw/main/LICENSE
 # Source: https://github.com/gabriel403/ProxmoxVED/tree/add-g403-ddns/tools/g403-ddns
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
@@ -23,10 +23,8 @@ cat <<PKG >/opt/g403-ddns/package.json
 PKG
 msg_ok "Fetched g403-ddns $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)"
 
-# ---------------------------------------------------------------------------
 # Gather configuration. Every prompt is skipped when the matching var_* is
 # already set (exported from ct/g403-ddns.sh), so unattended installs work.
-# ---------------------------------------------------------------------------
 echo
 echo -e "${TAB3}${BOLD}Where should the WAN IP come from?${CL}"
 echo -e "${TAB3}  omada  - read the gateway's WAN port from the Omada controller (default)"
@@ -135,7 +133,7 @@ msg_info "Checking Credentials (dry run, changes nothing)"
 if (cd /opt/g403-ddns && HEALTH_PORT=0 node --env-file=.env index.ts --once --dry-run); then
   msg_ok "Checked Credentials"
 else
-  msg_error "Credential check failed - see the lines above. The service is still installed; fix /opt/g403-ddns/.env and 'systemctl restart g403-ddns'."
+  msg_warn "Credential check failed - see the lines above. The service is still installed; fix /opt/g403-ddns/.env and 'systemctl restart g403-ddns'."
 fi
 
 msg_info "Creating Service"

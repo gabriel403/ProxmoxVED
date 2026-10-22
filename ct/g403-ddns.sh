@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+_CS_DEFAULT_URL="https://raw.githubusercontent.com/community-scripts/DevScripts/main"
 _cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
 source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
 # Copyright (c) 2021-2026 community-scripts ORG
-# Author: Gabriel Baker (gbaker403)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# Author: Gabriel Baker (gabriel403)
+# License: MIT | https://github.com/community-scripts/DevScripts/raw/main/LICENSE
 # Source: https://github.com/gabriel403/ProxmoxVED/tree/add-g403-ddns/tools/g403-ddns
 
 APP="g403-ddns"
@@ -83,22 +84,22 @@ function update_script() {
   curl -fsSL "${var_source_url}" -o /opt/g403-ddns/index.ts.new
   if cmp -s /opt/g403-ddns/index.ts /opt/g403-ddns/index.ts.new; then
     rm -f /opt/g403-ddns/index.ts.new
-    msg_ok "No update required. ${APP} is already at $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)."
+    msg_ok "No update required. g403-ddns is already at $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)."
     exit
   fi
   msg_ok "Found Update"
 
-  msg_info "Stopping Service"
+  msg_info "Stopping g403-ddns"
   systemctl stop g403-ddns
-  msg_ok "Stopped Service"
+  msg_ok "Stopped g403-ddns"
 
-  msg_info "Updating ${APP}"
+  msg_info "Updating g403-ddns"
   mv /opt/g403-ddns/index.ts.new /opt/g403-ddns/index.ts
-  msg_ok "Updated ${APP} to $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)"
+  msg_ok "Updated g403-ddns to $(sha256sum /opt/g403-ddns/index.ts | cut -c1-12)"
 
-  msg_info "Starting Service"
+  msg_info "Starting g403-ddns"
   systemctl start g403-ddns
-  msg_ok "Started Service"
+  msg_ok "Started g403-ddns"
   msg_ok "Updated successfully!"
   exit
 }
