@@ -20,8 +20,8 @@
       "script": "ct/docker-host.sh",
       "config_path": "/etc/docker/daemon.json",
       "resources": {
-        "cpu": 2,
-        "ram": 2048,
+        "cpu": 1,
+        "ram": 1024,
         "hdd": 8,
         "os": "Debian",
         "version": "13"
