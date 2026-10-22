@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+_CS_DEFAULT_URL="https://raw.githubusercontent.com/community-scripts/DevScripts/main"
 _cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
 source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
 # Copyright (c) 2021-2026 community-scripts ORG
-# Author: Gabriel Baker (gbaker403)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# Author: Gabriel Baker (gabriel403)
+# License: MIT | https://github.com/community-scripts/DevScripts/raw/main/LICENSE
 # Source: https://github.com/prometheus/snmp_exporter
 
 APP="SNMP-Exporter"
@@ -32,9 +33,9 @@ function update_script() {
   fi
 
   if check_for_gh_release "snmp_exporter" "prometheus/snmp_exporter"; then
-    msg_info "Stopping ${APP}"
+    msg_info "Stopping SNMP Exporter"
     systemctl stop snmp_exporter
-    msg_ok "Stopped ${APP}"
+    msg_ok "Stopped SNMP Exporter"
 
     create_backup /opt/snmp_exporter/snmp.yml
 
@@ -42,9 +43,9 @@ function update_script() {
 
     restore_backup
 
-    msg_info "Starting ${APP}"
+    msg_info "Starting SNMP Exporter"
     systemctl start snmp_exporter
-    msg_ok "Started ${APP}"
+    msg_ok "Started SNMP Exporter"
 
     msg_ok "Updated successfully!"
   fi
