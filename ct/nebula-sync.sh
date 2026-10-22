@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+_CS_DEFAULT_URL="https://raw.githubusercontent.com/community-scripts/DevScripts/main"
 _cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
 source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Gabriel Baker (gabriel403)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# License: MIT | https://github.com/community-scripts/DevScripts/raw/main/LICENSE
 # Source: https://github.com/lovelaze/nebula-sync
 
 APP="Nebula-Sync"
@@ -32,9 +33,9 @@ function update_script() {
   fi
 
   if check_for_gh_release "nebula-sync" "lovelaze/nebula-sync"; then
-    msg_info "Stopping Service"
+    msg_info "Stopping Nebula-Sync"
     systemctl stop nebula-sync
-    msg_ok "Stopped Service"
+    msg_ok "Stopped Nebula-Sync"
 
     create_backup /opt/nebula-sync/.env
 
@@ -42,9 +43,9 @@ function update_script() {
 
     restore_backup
 
-    msg_info "Starting Service"
+    msg_info "Starting Nebula-Sync"
     systemctl start nebula-sync
-    msg_ok "Started Service"
+    msg_ok "Started Nebula-Sync"
     msg_ok "Updated successfully!"
   fi
   exit
